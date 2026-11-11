@@ -9,6 +9,10 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
+import android.graphics.Typeface;
+import android.content.res.ColorStateList;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.media.Image;
 import android.os.Bundle;
 import android.util.Log;
@@ -55,6 +59,16 @@ public final class AuroraQrActivity extends ComponentActivity {
     private static final String TAG = "AuroraQr";
     private static final String PREFIX = "aurora://";
 
+    // Positron Dark (crates/ui/src/theme.json), so the native view matches the gpui screens.
+    private static final int BACKGROUND = 0xFF09090B;
+    private static final int FOREGROUND = 0xFFFAFAFA;
+    private static final int SECONDARY = 0xFF27272A;
+    private static final int PRIMARY = 0xFF193CB8;
+    private static final float RADIUS_DP = 8;
+
+    /** Distance from the screen top to the scan window. */
+    private static final int WINDOW_TOP_DP = 128;
+
     private static volatile String result;
     private static volatile AuroraQrActivity current;
 
@@ -89,29 +103,39 @@ public final class AuroraQrActivity extends ComponentActivity {
         current = this;
 
         FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Color.BLACK);
+        root.setBackgroundColor(BACKGROUND);
         PreviewView preview = new PreviewView(this);
         root.addView(preview, fill());
         root.addView(new Frame(this), fill());
 
         TextView hint = new TextView(this);
         hint.setText("Scan the QR code shown on your computer");
-        hint.setTextColor(Color.WHITE);
-        hint.setTextSize(16);
+        hint.setTextColor(FOREGROUND);
+        hint.setTextSize(14);
         hint.setGravity(Gravity.CENTER);
         FrameLayout.LayoutParams hintLp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.TOP);
-        hintLp.topMargin = dp(this, 96);
+        hintLp.topMargin = dp(this, 72);
         root.addView(hint, hintLp);
 
+        // Mirrors the app's full width secondary button: 8dp radius, 48dp high, 14sp medium.
         Button cancel = new Button(this);
         cancel.setText("Cancel");
+        cancel.setAllCaps(false);
+        cancel.setTextColor(FOREGROUND);
+        cancel.setTextSize(14);
+        cancel.setTypeface(Typeface.create(Typeface.DEFAULT, 500, false));
+        cancel.setStateListAnimator(null);
+        cancel.setElevation(0);
+        GradientDrawable shape = new GradientDrawable();
+        shape.setColor(SECONDARY);
+        shape.setCornerRadius(dp(this, RADIUS_DP));
+        cancel.setBackground(new RippleDrawable(ColorStateList.valueOf(0x33FFFFFF), shape, null));
         cancel.setOnClickListener(v -> finish());
         FrameLayout.LayoutParams cancelLp = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        cancelLp.bottomMargin = dp(this, 64);
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(this, 48), Gravity.BOTTOM);
+        cancelLp.setMargins(dp(this, 20), 0, dp(this, 20), dp(this, 32));
         root.addView(cancel, cancelLp);
         setContentView(root);
 
@@ -186,19 +210,19 @@ public final class AuroraQrActivity extends ComponentActivity {
 
         Frame(Context c) {
             super(c);
-            dim.setColor(0xCC000000);
-            stroke.setColor(0xFF3B6BFF);
+            dim.setColor(0xCC09090B);
+            stroke.setColor(PRIMARY);
             stroke.setStyle(Paint.Style.STROKE);
             stroke.setStrokeWidth(dp(c, 4));
         }
 
         @Override
         protected void onDraw(Canvas canvas) {
-            float side = Math.min(getWidth(), getHeight()) * 0.7f;
+            float side = getWidth() * 0.7f;
             float left = (getWidth() - side) / 2f;
-            float top = (getHeight() - side) / 2f;
+            float top = dp(getContext(), WINDOW_TOP_DP);
             RectF hole = new RectF(left, top, left + side, top + side);
-            float r = dp(getContext(), 24);
+            float r = dp(getContext(), 3 * RADIUS_DP);
             path.reset();
             path.setFillType(Path.FillType.EVEN_ODD);
             path.addRect(0, 0, getWidth(), getHeight(), Path.Direction.CW);
