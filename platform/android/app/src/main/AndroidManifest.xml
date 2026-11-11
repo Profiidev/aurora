@@ -23,10 +23,9 @@
 
     <!-- Network / connectivity permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- disabled: enable with gpui-mobile feature connectivity / network_info
+    <!-- iroh watches the network interfaces to learn its own addresses -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    -->
 
     <!-- disabled: enable with gpui-mobile feature vibration
     <uses-permission android:name="android.permission.VIBRATE" />
