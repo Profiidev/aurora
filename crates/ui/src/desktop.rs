@@ -99,8 +99,10 @@ impl AppView {
   ) -> AnyElement {
     let theme = cx.theme();
     let enabled = on_click.is_some();
+    let id = id.into();
     h_flex()
-      .id(id.into())
+      .id(id.clone())
+      .debug_selector(|| id.to_string())
       .items_center()
       // shadcn sidebar menu button: h-8, p-2, rounded-md
       .h_8()
@@ -273,6 +275,7 @@ impl AppView {
       } else {
         Button::new("rescan")
           .cursor_pointer()
+          .debug_selector(|| "rescan".into())
           .ghost()
           .small()
           .icon(IconName::RefreshCw)
@@ -344,6 +347,7 @@ impl AppView {
             .child(
               Button::new("by-address")
                 .cursor_pointer()
+                .debug_selector(|| "by-address".into())
                 .loading(self.loading("by-address"))
                 .when(self.loading("by-address"), |b| b.icon(Spinner::new()))
                 .outline()
@@ -404,6 +408,7 @@ impl AppView {
           f.child(
             Button::new("mismatch")
               .cursor_pointer()
+              .debug_selector(|| "mismatch".into())
               .loading(self.loading("mismatch"))
               .when(self.loading("mismatch"), |b| b.icon(Spinner::new()))
               .outline()
@@ -413,6 +418,7 @@ impl AppView {
           .child(
             Button::new("pair")
               .cursor_pointer()
+              .debug_selector(|| "pair".into())
               .loading(self.loading("pair"))
               .when(self.loading("pair"), |b| b.icon(Spinner::new()))
               .primary()
@@ -808,6 +814,7 @@ impl AppView {
             .child(
               Button::new("unpair")
                 .cursor_pointer()
+                .debug_selector(|| "unpair".into())
                 .loading(self.loading("unpair"))
                 .when(self.loading("unpair"), |b| b.icon(Spinner::new()))
                 .danger()
@@ -817,5 +824,71 @@ impl AppView {
         );
     }
     page
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use aurora_core::types::PairState;
+  use gpui::{AppContext, TestAppContext};
+
+  use crate::{
+    app::{Page, Platform},
+    test_support::*,
+  };
+
+  #[gpui::test]
+  fn every_page_renders(cx: &mut TestAppContext) {
+    let fake = FakeBackend::new(vec![device("a", "home")]);
+    let (app, vcx) = open_app(cx, Platform::Desktop, fake.clone());
+    assert!(shown(vcx, "f-overview"));
+    for page in [Page::Pair, Page::Settings, Page::Home] {
+      vcx.update_entity(&app, |a, cx| a.go(page, cx));
+      draw(vcx);
+    }
+    fake.set(|s| s.nearby = vec![nearby("phone")]);
+    vcx.update_entity(&app, |a, cx| {
+      a.go(Page::Pair, cx);
+      a.scan(cx);
+    });
+    draw(vcx);
+    for accepted in [false, true] {
+      fake.set(|s| s.pair = PairState::Confirm(confirm(accepted)));
+      vcx.update_entity(&app, |a, cx| a.refresh(cx));
+      draw(vcx);
+      assert_eq!(shown(vcx, "mismatch"), !accepted);
+    }
+  }
+
+  #[gpui::test]
+  fn sidebar_rows_navigate(cx: &mut TestAppContext) {
+    let fake = FakeBackend::new(vec![device("a", "home")]);
+    let (app, vcx) = open_app(cx, Platform::Desktop, fake.clone());
+    click(vcx, "pair-new");
+    vcx.read_entity(&app, |a, _| assert!(a.page == Page::Pair));
+    assert!(fake.calls().contains(&"start_pairing".to_string()));
+    click(vcx, "dev-a");
+    vcx.read_entity(&app, |a, _| assert!(a.page == Page::Home));
+    click(vcx, "f-overview");
+    vcx.read_entity(&app, |a, _| assert!(a.page == Page::Home));
+    click(vcx, "settings");
+    vcx.read_entity(&app, |a, _| assert!(a.page == Page::Settings));
+  }
+
+  #[gpui::test]
+  fn connect_by_link_dials_what_was_typed(cx: &mut TestAppContext) {
+    let fake = FakeBackend::new(vec![]);
+    let (app, vcx) = open_app(cx, Platform::Desktop, fake.clone());
+    let input = vcx.read_entity(&app, |a, _| a.address.clone());
+    vcx.update(|window, cx| {
+      input.update(cx, |s, cx| s.set_value("aurora://pair?id=ab", window, cx))
+    });
+    draw(vcx);
+    click(vcx, "by-address");
+    assert!(
+      fake
+        .calls()
+        .contains(&"connect aurora://pair?id=ab".to_string())
+    );
   }
 }

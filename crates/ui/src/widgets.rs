@@ -8,8 +8,8 @@ use aurora_core::{
   types::Confirm,
 };
 use gpui::{
-  AnyElement, App, AssetSource, Div, Hsla, IntoElement, ParentElement, SharedString, Styled, div,
-  prelude::FluentBuilder, px,
+  AnyElement, App, AssetSource, Div, Hsla, InteractiveElement, IntoElement, ParentElement,
+  SharedString, Styled, div, prelude::FluentBuilder, px,
 };
 use gpui_kit::{
   assets::{Assets, IconName},
@@ -311,7 +311,11 @@ pub fn device_id(cx: &App, link: &str) -> Option<Div> {
           .font_family(cx.theme().mono_font_family.clone())
           .child(short),
       )
-      .child(Clipboard::new("copy-device-id").value(id)),
+      .child(
+        div()
+          .debug_selector(|| "copy-device-id".into())
+          .child(Clipboard::new("copy-device-id").value(id)),
+      ),
   )
 }
 
@@ -345,4 +349,42 @@ pub fn qr(link: &str, side: f32) -> Div {
     .items_center()
     .justify_center()
     .child(v_flex().children(rows))
+}
+
+#[cfg(test)]
+mod tests {
+  use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, div};
+
+  use super::*;
+  use crate::test_support::{draw, info};
+
+  struct Pieces;
+
+  impl Render for Pieces {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+      div()
+        .child(code_tiles(cx, "123456"))
+        .child(qr(&info().link, 264.))
+        .child(qr("", 100.))
+        .children(device_id(cx, &info().link))
+    }
+  }
+
+  #[gpui::test]
+  fn pieces_render(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let (_, vcx) = cx.add_window_view(|_, _| Pieces);
+    let vcx: &mut VisualTestContext = vcx;
+    draw(vcx);
+    assert!(vcx.debug_bounds("copy-device-id").is_some());
+  }
+
+  #[gpui::test]
+  fn device_id_needs_a_valid_link(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+      gpui_kit::init(cx);
+      assert!(device_id(cx, "not a link").is_none());
+      assert!(device_id(cx, &info().link).is_some());
+    });
+  }
 }

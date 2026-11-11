@@ -153,8 +153,13 @@ impl AppView {
       |this, (devices, state, settings), cx| {
         this.offline = devices.is_err();
         if let (Ok(devices), Ok(state)) = (devices, state) {
-          // the daemon lost our waiting session (it restarted): the QR shown is dead
-          if this.on_pair_page() && this.info.is_some() && matches!(state, PairState::Idle) {
+          // the daemon lost our waiting session (it restarted): the QR shown is dead.
+          // Not while a button runs: our own dial closed the session on purpose
+          if this.on_pair_page()
+            && this.info.is_some()
+            && this.busy.is_none()
+            && matches!(state, PairState::Idle)
+          {
             this.rearm(cx);
           }
           this.devices = devices;
@@ -184,7 +189,7 @@ impl AppView {
     );
   }
 
-  fn on_event(&mut self, event: Event, cx: &mut Context<Self>) {
+  pub(crate) fn on_event(&mut self, event: Event, cx: &mut Context<Self>) {
     if matches!(
       event,
       Event::CodeReady(_)
@@ -425,5 +430,169 @@ impl Render for AppView {
       .size_full()
       .bg(cx.theme().background)
       .text_color(cx.theme().foreground)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use gpui::TestAppContext;
+
+  use super::*;
+  use crate::test_support::*;
+
+  fn count(fake: &FakeBackend, call: &str) -> usize {
+    fake.calls().iter().filter(|c| *c == call).count()
+  }
+
+  #[gpui::test]
+  fn first_run_opens_the_pair_page(cx: &mut TestAppContext) {
+    let fake = FakeBackend::new(vec![]);
+    let (app, vcx) = open_app(cx, Platform::Desktop, fake.clone());
+    vcx.read_entity(&app, |a, _| {
+      assert!(a.page == Page::Pair);
+      assert_eq!(a.info, Some(info()));
+    });
+    assert_eq!(count(&fake, "start_pairing"), 1);
+  }
+
+  #[gpui::test]
+  fn a_paired_device_opens_its_overview(cx: &mut TestAppContext) {
+    let fake = FakeBackend::new(vec![device("a", "home")]);
+    let (app, vcx) = open_app(cx, Platform::Desktop, fake.clone());
+    vcx.read_entity(&app, |a, _| {
+      assert!(a.page == Page::Home);
+      assert_eq!(a.selected.as_deref(), Some("a"));
+    });
+    assert_eq!(count(&fake, "start_pairing"), 0);
+  }
+
+  #[gpui::test]
+  fn the_phone_returns_to_pairing_once_nothing_is_paired(cx: &mut TestAppContext) {
+    let fake = FakeBackend::new(vec![device("a", "home")]);
+    let (app, vcx) = open_app(cx, Platform::Mobile, fake.clone());
+    vcx.update_entity(&app, |a, cx| a.go(Page::Settings, cx));
+    fake.set(|s| s.devices.clear());
+    vcx.update_entity(&app, |a, cx| a.refresh(cx));
+    draw(vcx);
+    vcx.read_entity(&app, |a, _| assert!(a.page == Page::Pair));
+    assert_eq!(count(&fake, "start_pairing"), 1, "pairing session opened");
+  }
+
+  #[gpui::test]
+  fn a_lost_session_gets_a_fresh_qr(cx: &mut TestAppContext) {
+    let fake = FakeBackend::new(vec![]);
+    let (app, vcx) = open_app(cx, Platform::Desktop, fake.clone());
+    // the daemon restarted: our QR is dead
+    fake.set(|s| s.pair = PairState::Idle);
+    vcx.update_entity(&app, |a, cx| a.refresh(cx));
+    draw(vcx);
+    assert_eq!(count(&fake, "start_pairing"), 2);
+  }
+
+  #[gpui::test]
+  fn leaving_the_pair_page_ends_the_session_except_while_confirming(cx: &mut TestAppContext) {
+    let fake = FakeBackend::new(vec![]);
+    let (app, vcx) = open_app(cx, Platform::Desktop, fake.clone());
+    vcx.update_entity(&app, |a, cx| {
+      a.busy = Some("x".into());
+      a.go(Page::Settings, cx);
+      assert!(a.busy.is_none());
+    });
+    draw(vcx);
+    assert_eq!(count(&fake, "cancel_pairing"), 1);
+
+    vcx.update_entity(&app, |a, cx| a.go(Page::Pair, cx));
+    fake.set(|s| s.pair = PairState::Confirm(confirm(false)));
+    vcx.update_entity(&app, |a, cx| a.refresh(cx));
+    draw(vcx);
+    vcx.update_entity(&app, |a, cx| a.go(Page::Settings, cx));
+    draw(vcx);
+    assert_eq!(count(&fake, "cancel_pairing"), 1, "kept the code on screen");
+  }
+
+  #[gpui::test]
+  fn a_failed_pairing_ends_the_spinner_and_rearms(cx: &mut TestAppContext) {
+    let fake = FakeBackend::new(vec![]);
+    let (app, vcx) = open_app(cx, Platform::Desktop, fake.clone());
+    fake.set(|s| s.pair = PairState::Idle);
+    vcx.update_entity(&app, |a, cx| {
+      a.busy = Some("mismatch".into());
+      a.on_event(Event::PairingFailed("rejected".into()), cx);
+      assert!(a.busy.is_none());
+      assert_eq!(a.error.as_deref(), Some("Pairing failed: rejected"));
+    });
+    draw(vcx);
+    vcx.read_entity(&app, |a, _| assert!(a.error.is_none(), "shown as a toast"));
+    assert_eq!(count(&fake, "start_pairing"), 2);
+  }
+
+  #[gpui::test]
+  fn a_cancel_from_our_own_dial_does_not_rearm(cx: &mut TestAppContext) {
+    let fake = FakeBackend::new(vec![]);
+    let (app, vcx) = open_app(cx, Platform::Desktop, fake.clone());
+    fake.set(|s| s.pair = PairState::Idle);
+    vcx.update_entity(&app, |a, cx| {
+      a.busy = Some("by-address".into());
+      a.on_event(Event::PairingCancelled, cx);
+    });
+    draw(vcx);
+    assert_eq!(count(&fake, "start_pairing"), 1);
+  }
+
+  #[gpui::test]
+  fn connect_spins_until_the_code_or_an_error(cx: &mut TestAppContext) {
+    let fake = FakeBackend::new(vec![]);
+    let (app, vcx) = open_app(cx, Platform::Desktop, fake.clone());
+    vcx.update_entity(&app, |a, cx| a.connect("abc".into(), "by-address", cx));
+    vcx.run_until_parked();
+    vcx.read_entity(&app, |a, _| assert!(a.loading("by-address")));
+    assert!(fake.calls().contains(&"connect abc".to_string()));
+    vcx.update_entity(&app, |a, cx| {
+      a.on_event(Event::CodeReady(confirm(false)), cx)
+    });
+    vcx.read_entity(&app, |a, _| assert!(a.busy.is_none()));
+
+    fake.set(|s| {
+      s.pair = PairState::Idle;
+      s.connect_error = Some("did not answer".into());
+    });
+    vcx.update_entity(&app, |a, cx| a.connect("abc".into(), "by-address", cx));
+    vcx.run_until_parked();
+    // the error became a toast with the frame that ran meanwhile
+    vcx.read_entity(&app, |a, _| assert!(a.busy.is_none()));
+  }
+
+  #[gpui::test]
+  fn decide_and_unpair_spin_until_the_engine_answers(cx: &mut TestAppContext) {
+    let fake = FakeBackend::new(vec![device("a", "home")]);
+    let (app, vcx) = open_app(cx, Platform::Desktop, fake.clone());
+    vcx.update_entity(&app, |a, cx| a.decide(true, cx));
+    vcx.run_until_parked();
+    vcx.read_entity(&app, |a, _| assert!(a.loading("pair")));
+    vcx.update_entity(&app, |a, cx| {
+      a.on_event(Event::Paired(device("a", "home").device), cx)
+    });
+    vcx.read_entity(&app, |a, _| assert!(a.busy.is_none()));
+
+    vcx.update_entity(&app, |a, cx| a.unpair("a".into(), cx));
+    vcx.run_until_parked();
+    assert!(fake.calls().contains(&"unpair a".to_string()));
+    vcx.update_entity(&app, |a, cx| {
+      assert!(a.loading("unpair"));
+      a.on_event(Event::Unpaired("a".into()), cx);
+      assert!(a.busy.is_none());
+    });
+  }
+
+  #[gpui::test]
+  fn discovery_changes_reach_the_backend(cx: &mut TestAppContext) {
+    let fake = FakeBackend::new(vec![]);
+    let (app, vcx) = open_app(cx, Platform::Desktop, fake.clone());
+    vcx.update_entity(&app, |a, cx| a.set_discovery(true, cx));
+    vcx.run_until_parked();
+    assert!(fake.calls().contains(&"set_discovery true".to_string()));
+    vcx.read_entity(&app, |a, _| {
+      assert!(a.settings.as_ref().unwrap().discovery);
+    });
   }
 }

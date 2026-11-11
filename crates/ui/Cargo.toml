@@ -15,3 +15,6 @@ aurora_core.workspace = true
 anyhow.workspace = true
 flume.workspace = true
 qrcode.workspace = true
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

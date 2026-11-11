@@ -96,6 +96,7 @@ impl AppView {
         let active = self.page == page;
         v_flex()
           .id(label)
+          .debug_selector(move || format!("tab-{label}"))
           .flex_1()
           .min_h(px(48.))
           .items_center()
@@ -155,6 +156,7 @@ impl AppView {
       v_flex().gap_2().child(Input::new(&self.address)).child(
         Button::new("by-address")
           .cursor_pointer()
+          .debug_selector(|| "by-address".into())
           .loading(self.loading("by-address"))
           .when(self.loading("by-address"), |b| b.icon(Spinner::new()))
           .outline()
@@ -171,6 +173,7 @@ impl AppView {
       v_flex().child(
         Button::new("show-address")
           .cursor_pointer()
+          .debug_selector(|| "show-address".into())
           .outline()
           .label("Connect by link or ID")
           .w_full()
@@ -235,6 +238,7 @@ impl AppView {
                   } else {
                     Button::new("rescan")
                       .cursor_pointer()
+                      .debug_selector(|| "rescan".into())
                       .ghost()
                       .icon(IconName::RefreshCw)
                       .on_click(cx.listener(|this, _, _, cx| this.scan(cx)))
@@ -261,11 +265,14 @@ impl AppView {
     self.settings.as_ref().is_some_and(|s| s.discovery)
   }
 
-  fn discovery_switch(&self, id: &'static str, cx: &mut Context<Self>) -> Switch {
-    Switch::new(id)
-      .cursor_pointer()
-      .checked(self.discovery())
-      .on_click(cx.listener(|this, on: &bool, _, cx| this.set_discovery(*on, cx)))
+  fn discovery_switch(&self, id: &'static str, cx: &mut Context<Self>) -> Div {
+    // the wrapper carries the test selector, the kit switch has none
+    div().debug_selector(move || id.into()).child(
+      Switch::new(id)
+        .cursor_pointer()
+        .checked(self.discovery())
+        .on_click(cx.listener(|this, on: &bool, _, cx| this.set_discovery(*on, cx))),
+    )
   }
 
   /// This phone's own pairing QR, for a device that scans instead
@@ -273,6 +280,7 @@ impl AppView {
     let link = self.info.as_ref().map(|i| i.link.clone());
     Button::new("show-qr")
       .cursor_pointer()
+      .debug_selector(|| "show-qr".into())
       .outline()
       .icon(IconName::QrCode)
       .label("Show QR code")
@@ -308,6 +316,7 @@ impl AppView {
         .child(
           Button::new("pair")
             .cursor_pointer()
+            .debug_selector(|| "pair".into())
             .loading(self.loading("pair"))
             .when(self.loading("pair"), |b| b.icon(Spinner::new()))
             .primary()
@@ -318,6 +327,7 @@ impl AppView {
         .child(
           Button::new("mismatch")
             .cursor_pointer()
+            .debug_selector(|| "mismatch".into())
             .loading(self.loading("mismatch"))
             .when(self.loading("mismatch"), |b| b.icon(Spinner::new()))
             .outline()
@@ -498,6 +508,7 @@ impl AppView {
     let view = cx.entity().downgrade();
     Button::new("device-picker")
       .cursor_pointer()
+      .debug_selector(|| "device-picker".into())
       .outline()
       .label(current.to_string())
       .dropdown_caret(true)
@@ -568,6 +579,7 @@ impl AppView {
       .child(
         Button::new("unpair")
           .cursor_pointer()
+          .debug_selector(|| "unpair".into())
           .loading(self.loading("unpair"))
           .when(self.loading("unpair"), |b| b.icon(Spinner::new()))
           .danger()
@@ -575,5 +587,103 @@ impl AppView {
           .w_full()
           .on_click(cx.listener(move |this, _, _, cx| this.unpair(id.clone(), cx))),
       )
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use aurora_core::types::PairState;
+  use gpui::{AppContext, TestAppContext};
+  use gpui_kit::component::WindowExt;
+
+  use crate::{
+    app::{Page, Platform},
+    test_support::*,
+  };
+
+  #[gpui::test]
+  fn every_screen_renders(cx: &mut TestAppContext) {
+    let fake = FakeBackend::new(vec![]);
+    let (app, vcx) = open_app(cx, Platform::Mobile, fake.clone());
+    assert!(shown(vcx, "show-qr") && shown(vcx, "discovery-pair"));
+    assert!(!shown(vcx, "rescan"), "no list while discovery is off");
+
+    fake.set(|s| {
+      s.settings.discovery = true;
+      s.nearby = vec![nearby("laptop")];
+    });
+    vcx.update_entity(&app, |a, cx| {
+      a.refresh(cx);
+      a.scan(cx);
+      a.show_address = true;
+    });
+    draw(vcx);
+    assert!(shown(vcx, "rescan") && shown(vcx, "by-address"));
+
+    for accepted in [false, true] {
+      fake.set(|s| s.pair = PairState::Confirm(confirm(accepted)));
+      vcx.update_entity(&app, |a, cx| a.refresh(cx));
+      draw(vcx);
+      assert_eq!(shown(vcx, "mismatch"), !accepted);
+    }
+
+    fake.set(|s| {
+      s.pair = PairState::Idle;
+      s.devices = vec![device("a", "home"), device("b", "laptop")];
+    });
+    for page in [Page::Home, Page::Settings, Page::Pair] {
+      vcx.update_entity(&app, |a, cx| {
+        a.refresh(cx);
+        a.go(page, cx);
+      });
+      draw(vcx);
+    }
+  }
+
+  #[gpui::test]
+  fn mismatch_shows_a_spinner_and_declines(cx: &mut TestAppContext) {
+    let fake = FakeBackend::new(vec![]);
+    fake.set(|s| s.pair = PairState::Confirm(confirm(false)));
+    let (app, vcx) = open_app(cx, Platform::Mobile, fake.clone());
+    click(vcx, "mismatch");
+    assert!(fake.calls().contains(&"decide false".to_string()));
+    vcx.read_entity(&app, |a, _| assert!(a.loading("mismatch")));
+  }
+
+  #[gpui::test]
+  fn the_qr_dialog_opens_and_a_dialing_device_closes_it(cx: &mut TestAppContext) {
+    let fake = FakeBackend::new(vec![]);
+    let (app, vcx) = open_app(cx, Platform::Mobile, fake.clone());
+    click(vcx, "show-qr");
+    assert!(vcx.update(|window, cx| window.has_active_dialog(cx)));
+    assert!(
+      shown(vcx, "copy-device-id"),
+      "device ID with its copy button"
+    );
+
+    fake.set(|s| s.pair = PairState::Confirm(confirm(false)));
+    vcx.update_entity(&app, |a, cx| a.refresh(cx));
+    draw(vcx);
+    draw(vcx);
+    assert!(!vcx.update(|window, cx| window.has_active_dialog(cx)));
+  }
+
+  #[gpui::test]
+  fn the_discovery_switch_and_tabs_work(cx: &mut TestAppContext) {
+    let fake = FakeBackend::new(vec![]);
+    let (app, vcx) = open_app(cx, Platform::Mobile, fake.clone());
+    click(vcx, "discovery-pair");
+    assert!(fake.calls().contains(&"set_discovery true".to_string()));
+
+    fake.set(|s| s.devices = vec![device("a", "home")]);
+    vcx.update_entity(&app, |a, cx| a.refresh(cx));
+    draw(vcx);
+    click(vcx, "tab-Settings");
+    vcx.read_entity(&app, |a, _| assert!(a.page == Page::Settings));
+    assert!(shown(vcx, "device-picker") && shown(vcx, "discovery-settings"));
+    click(vcx, "unpair");
+    assert!(fake.calls().contains(&"unpair a".to_string()));
+    click(vcx, "tab-Home");
+    vcx.read_entity(&app, |a, _| assert!(a.page == Page::Home));
   }
 }

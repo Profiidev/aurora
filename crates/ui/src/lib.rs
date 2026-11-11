@@ -2,6 +2,8 @@ mod app;
 mod backend;
 mod desktop;
 mod mobile;
+#[cfg(test)]
+mod test_support;
 mod widgets;
 
 use std::sync::Arc;
