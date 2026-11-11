@@ -18,8 +18,21 @@ media_ctl = []
 
 [dependencies]
 aurora_proto.workspace = true
-serde.workspace = true
+aurora_transport = { workspace = true, features = ["iroh"] }
 anyhow.workspace = true
 blake3.workspace = true
-rcgen.workspace = true
+config.workspace = true
+dirs.workspace = true
 interprocess.workspace = true
+notify.workspace = true
+rustix.workspace = true
+serde.workspace = true
+serde_ignored.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+toml.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
