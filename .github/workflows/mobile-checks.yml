@@ -1,0 +1,49 @@
+name: Mobile Checks
+on:
+  pull_request:
+
+jobs:
+  android:
+    name: Android clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          components: clippy
+          targets: aarch64-linux-android
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk
+
+      - name: Cache cargo and rust files
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          cache-on-failure: true
+          shared-key: 'mobile_android_check_cache'
+
+      # the runner image ships an NDK at ANDROID_NDK_LATEST_HOME
+      - name: Clippy
+        env:
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_NDK_LATEST_HOME }}
+        run: cargo ndk -t arm64-v8a -P 30 clippy -p aurora_mobile --lib -- -D warnings
+
+  ios:
+    name: iOS clippy
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          components: clippy
+          targets: aarch64-apple-ios-sim
+
+      - name: Cache cargo and rust files
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          cache-on-failure: true
+          shared-key: 'mobile_ios_check_cache'
+
+      - name: Clippy
+        run: cargo clippy -p aurora_mobile --lib --target aarch64-apple-ios-sim -- -D warnings
