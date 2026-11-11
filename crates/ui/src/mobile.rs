@@ -24,8 +24,8 @@ use gpui_kit::{
 use crate::{
   app::{AppView, Page},
   widgets::{
-    ItemVariant, avatar, badge, card, card_content, code_tiles, confirm_details, field_row,
-    field_set, heading, icon, item, muted, qr,
+    ItemVariant, avatar, badge, card, card_content, code_tiles, confirm_details, device_id,
+    field_row, field_set, heading, icon, item, muted, qr,
   },
 };
 
@@ -286,6 +286,7 @@ impl AppView {
               .items_center()
               .gap_3()
               .child(qr(&link, 272.))
+              .children(device_id(cx, &link))
               .child(muted(cx, "Scan this with the other device.")),
           )
         });

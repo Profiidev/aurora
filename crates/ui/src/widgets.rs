@@ -3,14 +3,17 @@
 
 use std::borrow::Cow;
 
-use aurora_core::types::Confirm;
+use aurora_core::{
+  pairing::{Target, hex},
+  types::Confirm,
+};
 use gpui::{
   AnyElement, App, AssetSource, Div, Hsla, IntoElement, ParentElement, SharedString, Styled, div,
   prelude::FluentBuilder, px,
 };
 use gpui_kit::{
   assets::{Assets, IconName},
-  component::{ActiveTheme, Icon, StyledExt, h_flex, tag::Tag, v_flex},
+  component::{ActiveTheme, Icon, StyledExt, clipboard::Clipboard, h_flex, tag::Tag, v_flex},
 };
 use qrcode::{Color, QrCode};
 
@@ -26,6 +29,7 @@ gpui_kit::assets::icon_assets!(
     CircleCheck,
     CircleX,
     Clipboard,
+    Copy,
     Close,
     ExternalLink,
     FileUp,
@@ -286,6 +290,29 @@ pub fn confirm_details(cx: &App, c: &Confirm, who: &'static str, fingerprint: &'
             .child(value),
         )
     }))
+}
+
+/// This device's ID from its pairing link, shortened, with a copy button
+pub fn device_id(cx: &App, link: &str) -> Option<Div> {
+  let id = hex(&Target::parse(link).ok()?.id);
+  let short = format!("{}…{}", &id[..8], &id[id.len() - 8..]);
+  Some(
+    h_flex()
+      .items_center()
+      .gap_2()
+      .text_sm()
+      .child(
+        div()
+          .text_color(cx.theme().muted_foreground)
+          .child("Device ID"),
+      )
+      .child(
+        div()
+          .font_family(cx.theme().mono_font_family.clone())
+          .child(short),
+      )
+      .child(Clipboard::new("copy-device-id").value(id)),
+  )
 }
 
 /// The QR code as dark modules on a white rounded square

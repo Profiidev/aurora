@@ -24,8 +24,8 @@ use gpui_kit::{
 use crate::{
   app::{AppView, Page},
   widgets::{
-    ItemVariant, badge, card, card_content, card_header, code_tiles, confirm_details, field_row,
-    field_set, heading, icon, item, muted, online_color, qr,
+    ItemVariant, badge, card, card_content, card_header, code_tiles, confirm_details, device_id,
+    field_row, field_set, heading, icon, item, muted, online_color, qr,
   },
 };
 
@@ -236,7 +236,11 @@ impl AppView {
   fn desktop_pair(&mut self, cx: &mut Context<Self>) -> Div {
     let scan = {
       let body = match &self.info {
-        Some(info) => v_flex().items_center().child(qr(&info.link, 264.0)),
+        Some(info) => v_flex()
+          .items_center()
+          .gap_3()
+          .child(qr(&info.link, 264.0))
+          .children(device_id(cx, &info.link)),
         None => v_flex()
           .items_center()
           .justify_center()
