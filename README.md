@@ -31,3 +31,7 @@ Dependencies and package metadata are declared once in the root `Cargo.toml`.
 ## Commands
 
 `just desktop`, `just daemon`, `just android`, `just android-release`, `just ios`, `just icon <png>`.
+
+## License
+
+GPL-2.0, see [LICENSE](LICENSE).

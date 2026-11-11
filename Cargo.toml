@@ -16,7 +16,7 @@ members = [
 version = "0.1.0"
 edition = "2024"
 repository = "https://github.com/Profiidev/aurora"
-license = "MIT"
+license = "GPL-2.0"
 keywords = ["phone", "desktop", "connect", "gpui"]
 categories = []
 
