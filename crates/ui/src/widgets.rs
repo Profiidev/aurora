@@ -294,8 +294,12 @@ pub fn qr(link: &str, side: f32) -> Div {
     return div();
   };
   let width = code.width();
-  // a quiet zone of a few modules all around
-  let cell = px(side / (width as f32 + 6.0));
+  // whole pixels per module: fractions snap and leave a wide uneven margin.
+  // A fixed quiet zone, since one counted in modules gets thin on long links
+  const PAD: f32 = 12.0;
+  let cell = ((side - 2.0 * PAD) / width as f32).floor().max(1.0);
+  let side = cell * width as f32 + 2.0 * PAD;
+  let cell = px(cell);
   let modules = code.to_colors();
   let rows = modules.chunks(width).map(|row| {
     h_flex().children(row.iter().map(|c| {

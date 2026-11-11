@@ -102,15 +102,19 @@ impl AppView {
     h_flex()
       .id(id.into())
       .items_center()
-      .gap_2p5()
-      .p_2()
-      .rounded_lg()
+      // shadcn sidebar menu button: h-8, p-2, rounded-md
+      .h_8()
+      .flex_none()
+      .gap_2()
+      .px_2()
+      .rounded_md()
       .text_sm()
-      .when(active, |r| r.bg(theme.sidebar_accent))
+      .when(active, |r| r.bg(theme.sidebar_accent).font_medium())
       .when(dimmed && !active, |r| r.text_color(theme.muted_foreground))
       .when(enabled && !active, |r| {
         r.hover(|s| s.bg(theme.sidebar_accent)).cursor_pointer()
       })
+      .when(!enabled, |r| r.opacity(0.5).cursor_not_allowed())
       .children(leading.map(|i| icon(i).small()))
       .child(div().flex_1().child(label.into()))
       .children(trailing)
@@ -135,7 +139,7 @@ impl AppView {
       .h_full()
       .py_4()
       .px_3()
-      .gap_0p5()
+      .gap_1()
       .bg(cx.theme().sidebar)
       .border_r_1()
       .border_color(cx.theme().sidebar_border)
@@ -196,9 +200,20 @@ impl AppView {
       && let Some(d) = self.selected_device().cloned()
     {
       nav = nav.child(self.nav_label(cx, d.device.name.clone(), 16.));
-      nav = nav.child(self.nav_row(cx, "f-overview", None, "Overview", false, false, None, None));
+      nav = nav.child(self.nav_row(
+        cx,
+        "f-overview",
+        None,
+        "Overview",
+        true,
+        false,
+        None,
+        Some(Box::new(
+          cx.listener(|this, _, _, cx| this.go(Page::Home, cx)),
+        )),
+      ));
       for f in FEATURES {
-        nav = nav.child(self.nav_row(cx, format!("f-{f}"), None, f, false, true, None, None));
+        nav = nav.child(self.nav_row(cx, format!("f-{f}"), None, f, false, false, None, None));
       }
     }
 
@@ -221,11 +236,11 @@ impl AppView {
   fn desktop_pair(&mut self, cx: &mut Context<Self>) -> Div {
     let scan = {
       let body = match &self.info {
-        Some(info) => v_flex().items_center().child(qr(&info.link, 200.0)),
+        Some(info) => v_flex().items_center().child(qr(&info.link, 264.0)),
         None => v_flex()
           .items_center()
           .justify_center()
-          .h(px(200.))
+          .h(px(264.))
           .child(Spinner::new()),
       };
       card(cx, false)
@@ -272,7 +287,10 @@ impl AppView {
           true,
           Some(icon(IconName::Smartphone).small().into_any_element()),
           n.name.clone(),
-          Some(format!("{} · {}", n.os, n.addr.ip()).into()),
+          Some(match n.addr {
+            Some(a) => format!("{} · {}", n.os, a.ip()).into(),
+            None => n.os.clone().into(),
+          }),
           Some(
             Button::new(("nearby", i))
               .cursor_pointer()
@@ -303,8 +321,8 @@ impl AppView {
       .child(card_header(
         cx,
         false,
-        "Connect by address",
-        Some("For phones on another network, a VPN or a USB cable.".into()),
+        "Connect by link or ID",
+        Some("Paste the other device's pairing link or device ID.".into()),
         None,
       ))
       .child(
@@ -703,7 +721,7 @@ impl AppView {
         field_row(
           cx,
           "Discover on local network",
-          "Announce this device to other devices on the same network.",
+          "Find and be found by devices on this network.",
           Switch::new("discovery")
             .cursor_pointer()
             .checked(discovery)

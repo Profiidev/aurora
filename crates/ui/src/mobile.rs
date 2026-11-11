@@ -130,7 +130,10 @@ impl AppView {
               .into_any_element(),
           ),
           n.name.clone(),
-          Some(format!("{} · {}", n.os, n.addr.ip()).into()),
+          Some(match n.addr {
+            Some(a) => format!("{} · {}", n.os, a.ip()).into(),
+            None => n.os.clone().into(),
+          }),
           Some(
             Button::new(("nearby", i))
               .cursor_pointer()
@@ -169,7 +172,7 @@ impl AppView {
         Button::new("show-address")
           .cursor_pointer()
           .outline()
-          .label("Connect by address or USB")
+          .label("Connect by link or ID")
           .w_full()
           .on_click(cx.listener(|this, _, _, cx| {
             this.show_address = true;
@@ -218,30 +221,51 @@ impl AppView {
                   .font_medium()
                   .child("Devices nearby"),
               )
-              .child(
-                if self.scanning || matches!(self.pair, PairState::Dialing) {
-                  // centred in the button's box, so the icon does not shift
-                  div()
-                    .size_8()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(Spinner::new())
-                    .into_any_element()
-                } else {
-                  Button::new("rescan")
-                    .cursor_pointer()
-                    .ghost()
-                    .icon(IconName::RefreshCw)
-                    .on_click(cx.listener(|this, _, _, cx| this.scan(cx)))
-                    .into_any_element()
-                },
-              ),
+              .when(self.discovery(), |h| {
+                h.child(
+                  if self.scanning || matches!(self.pair, PairState::Dialing) {
+                    // centred in the button's box, so the icon does not shift
+                    div()
+                      .size_8()
+                      .flex()
+                      .items_center()
+                      .justify_center()
+                      .child(Spinner::new())
+                      .into_any_element()
+                  } else {
+                    Button::new("rescan")
+                      .cursor_pointer()
+                      .ghost()
+                      .icon(IconName::RefreshCw)
+                      .on_click(cx.listener(|this, _, _, cx| this.scan(cx)))
+                      .into_any_element()
+                  },
+                )
+              })
+              .child(self.discovery_switch("discovery-pair", cx)),
           )
-          .child(nearby),
+          .child(if self.discovery() {
+            nearby
+          } else {
+            v_flex().child(muted(
+              cx,
+              "Turn this on to find devices on this network, or use a QR code.",
+            ))
+          }),
       )
       .child(div().flex_1())
       .child(address)
+  }
+
+  fn discovery(&self) -> bool {
+    self.settings.as_ref().is_some_and(|s| s.discovery)
+  }
+
+  fn discovery_switch(&self, id: &'static str, cx: &mut Context<Self>) -> Switch {
+    Switch::new(id)
+      .cursor_pointer()
+      .checked(self.discovery())
+      .on_click(cx.listener(|this, on: &bool, _, cx| this.set_discovery(*on, cx)))
   }
 
   /// This phone's own pairing QR, for a device that scans instead
@@ -261,7 +285,7 @@ impl AppView {
             v_flex()
               .items_center()
               .gap_3()
-              .child(qr(&link, 240.))
+              .child(qr(&link, 272.))
               .child(muted(cx, "Scan this with the other device.")),
           )
         });
@@ -503,6 +527,19 @@ impl AppView {
     };
     let id = d.device.id.clone();
     let picker = self.device_picker(&d.device.name, cx);
+    let switch = self.discovery_switch("discovery-settings", cx);
+    let phone = field_set(
+      cx,
+      "This phone",
+      None,
+      [field_row(
+        cx,
+        "Find devices nearby",
+        "Find and be found on this Wi-Fi. Uses more battery.",
+        switch,
+      )
+      .into_any_element()],
+    );
     let features = field_set(
       cx,
       picker,
@@ -523,6 +560,8 @@ impl AppView {
       .pb_4()
       .gap_6()
       .child(div().text_2xl().font_semibold().child("Settings"))
+      .child(phone)
+      .child(Separator::horizontal())
       .child(features)
       .child(Separator::horizontal())
       .child(

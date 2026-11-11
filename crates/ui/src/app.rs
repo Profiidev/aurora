@@ -57,11 +57,8 @@ impl AppView {
     window: &mut Window,
     cx: &mut Context<Self>,
   ) -> Self {
-    let placeholder = match platform {
-      Platform::Desktop => "192.168.1.42 or node ID",
-      Platform::Mobile => "192.168.1.10",
-    };
-    let address = cx.new(|cx| InputState::new(window, cx).placeholder(placeholder));
+    let address =
+      cx.new(|cx| InputState::new(window, cx).placeholder("aurora:// link or device ID"));
     let relay = cx.new(|cx| InputState::new(window, cx).placeholder("https://relay.example.com"));
 
     // events arrive on a blocking iterator; hand them to the UI thread
@@ -221,10 +218,8 @@ impl AppView {
 
   fn on_tick(&mut self, cx: &mut Context<Self>) {
     self.tick += 1;
-    if self.on_pair_page() {
-      if self.tick.is_multiple_of(5) && !self.scanning {
-        self.scan(cx);
-      }
+    if self.on_pair_page() && self.tick.is_multiple_of(5) && !self.scanning {
+      self.scan(cx);
     }
   }
 
