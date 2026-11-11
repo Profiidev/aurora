@@ -19,7 +19,9 @@ tracing.workspace = true
 aurora_proto.workspace = true
 anyhow.workspace = true
 tokio.workspace = true
-iroh = { workspace = true, optional = true, default-features = false, features = ["tls-ring"] }
+iroh = { workspace = true, optional = true, default-features = false, features = [
+  "tls-ring"
+] }
 iroh-mdns-address-lookup = { workspace = true, optional = true }
 n0-future = { workspace = true, optional = true }
 nusb = { workspace = true, optional = true }
