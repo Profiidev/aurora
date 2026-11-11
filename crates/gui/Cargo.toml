@@ -1,0 +1,18 @@
+[package]
+name = "aurora_gui"
+description = "Aurora desktop app"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[[bin]]
+name = "aurora-gui"
+path = "src/main.rs"
+
+[dependencies]
+aurora_ui.workspace = true
+aurora_viewer.workspace = true
+aurora_core.workspace = true

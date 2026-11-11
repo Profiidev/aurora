@@ -1,0 +1,26 @@
+[package]
+name = "aurora_transport"
+description = "Transport trait and iroh, bluer and nusb backends for Aurora"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = []
+iroh = ["dep:iroh"]
+bluer = ["dep:bluer"]
+nusb = ["dep:nusb"]
+
+[dependencies]
+aurora_proto.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+iroh = { workspace = true, optional = true }
+nusb = { workspace = true, optional = true }
+
+# BlueZ is Linux only
+[target.'cfg(target_os = "linux")'.dependencies]
+bluer = { workspace = true, optional = true }

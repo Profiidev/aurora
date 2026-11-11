@@ -1,0 +1,13 @@
+[package]
+name = "aurora_ui"
+description = "Shared gpui theme and views for Aurora apps"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+gpui.workspace = true
+gpui-kit.workspace = true

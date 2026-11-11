@@ -1,0 +1,30 @@
+[package]
+name = "aurora_mobile"
+description = "Aurora mobile app (Android and iOS)"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lib]
+name = "aurora"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+aurora_ui.workspace = true
+aurora_core.workspace = true
+aurora_transport = { workspace = true, features = ["iroh"] }
+gpui.workspace = true
+log.workspace = true
+
+[target.'cfg(target_os = "ios")'.dependencies]
+# ponytail: upstream src/ios/platform_view.rs uses packages::{video_player, camera}
+# without cfg gates; drop this once gpui-mobile fixes it.
+gpui-mobile = { workspace = true, features = ["video_player", "camera"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+gpui-mobile.workspace = true
+android_logger.workspace = true
+android-activity.workspace = true

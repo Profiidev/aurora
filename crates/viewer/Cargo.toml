@@ -1,0 +1,16 @@
+[package]
+name = "aurora_viewer"
+description = "Phone screen mirror viewer for Aurora"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[[bin]]
+name = "aurora-viewer"
+path = "src/main.rs"
+
+[dependencies]
+aurora_ui.workspace = true

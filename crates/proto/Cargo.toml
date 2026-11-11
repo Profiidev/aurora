@@ -1,0 +1,13 @@
+[package]
+name = "aurora_proto"
+description = "Wire messages shared by all Aurora components"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+serde.workspace = true
+postcard.workspace = true

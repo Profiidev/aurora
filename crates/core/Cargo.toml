@@ -1,0 +1,25 @@
+[package]
+name = "aurora_core"
+description = "Pairing, crypto, device store, config and feature logic for Aurora"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = []
+notify = []
+sms = []
+files = []
+clipboard = []
+media_ctl = []
+
+[dependencies]
+aurora_proto.workspace = true
+serde.workspace = true
+anyhow.workspace = true
+blake3.workspace = true
+rcgen.workspace = true
+interprocess.workspace = true

@@ -1,0 +1,13 @@
+[package]
+name = "aurora_cli"
+description = "Aurora command line client"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+aurora_core.workspace = true
+clap.workspace = true

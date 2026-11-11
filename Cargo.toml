@@ -1,26 +1,111 @@
+[workspace]
+resolver = "3"
+members = [
+  "crates/core",
+  "crates/proto",
+  "crates/transport",
+  "crates/ui",
+  "crates/viewer",
+  "crates/daemon",
+  "crates/cli",
+  "crates/gui",
+  "crates/mobile"
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+repository = "https://github.com/Profiidev/aurora"
+license = "MIT"
+keywords = ["phone", "desktop", "connect", "gpui"]
+categories = []
+
+[workspace.dependencies]
+# Workspace crates
+aurora_cli = { path = "crates/cli" }
+aurora_core = { path = "crates/core" }
+aurora_daemon = { path = "crates/daemon" }
+aurora_gui = { path = "crates/gui" }
+aurora_mobile = { path = "crates/mobile" }
+aurora_proto = { path = "crates/proto" }
+aurora_transport = { path = "crates/transport" }
+aurora_ui = { path = "crates/ui" }
+aurora_viewer = { path = "crates/viewer" }
+
+# GPUI ecosystem
+gpui = { package = "gpui-pre", version = "=0.3.9", default-features = false }
+gpui-kit = { version = "0.7.3", default-features = false, features = [
+  "component"
+] }
+# Plugin features: url_launcher, shared_preferences, path_provider, package_info,
+# device_info, connectivity, network_info, vibration, battery, share, sensors,
+# webview, file_selector, image_picker, camera, permission_handler,
+# notifications, location, audio, video_player, clipboard, local_auth,
+# in_app_review, contacts, maps_launcher, maps, calendar, deeplink, microphone,
+# media_session. Enabling one also needs the matching AndroidManifest.xml block
+# (platform/android) and Info.plist usage string (platform/ios).
+gpui-mobile = { package = "gpui-pre-mobile", git = "https://github.com/longbridge/gpui-mobile", rev = "c24a1308e1dcb47ce94d9ef8d8d05ca4d77d2aa7", default-features = false }
+android-activity = { version = "0.6", features = ["native-activity"] }
+android_logger = "0.15"
+
+# Networking and transports
+bluer = "0.17.4"
+iroh = "1.4.1"
+nusb = "0.2.9"
+
+# Async and IPC
+interprocess = { version = "2.4.8", features = ["tokio"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "macros"] }
+
+# Serialization and crypto
+blake3 = "1.8.7"
+postcard = { version = "1.1.3", default-features = false, features = ["use-std"] }
+rcgen = "0.14.10"
+serde = { version = "1.0.229", features = ["derive"] }
+
+# CLI, logging, and diagnostics
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive"] }
+log = "0.4"
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
+
 [package]
 name = "aurora"
-version = "0.1.0"
-description = "Aurora"
-edition = "2024"
+description = "Aurora command line client"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
-# `cargo packager --release` (CI: .github/workflows/app-release.yml)
+[dependencies]
+aurora_cli.workspace = true
+
+# `cargo packager --release` (CI: .github/workflows/desktop-release.yml)
 [package.metadata.packager]
 product-name = "Aurora"
 identifier = "io.profidev.aurora"
 authors = ["ProfiiDev"]
 publisher = "profidev"
 category = "Utility"
-before-packaging-command = "cargo build --release --bin aurora"
+before-packaging-command = "cargo build --release -p aurora -p aurora_daemon -p aurora_gui"
+binaries = [
+  { path = "aurora-gui", main = true },
+  { path = "aurorad" },
+  { path = "aurora" }
+]
 icons = [
-  "packaging/icons/32x32.png",
-  "packaging/icons/128x128.png",
-  "packaging/icons/128x128@2x.png",
-  "packaging/icons/icon.ico"
+  "platform/packaging/icons/32x32.png",
+  "platform/packaging/icons/128x128.png",
+  "platform/packaging/icons/128x128@2x.png",
+  "platform/packaging/icons/icon.ico"
 ]
 
 [package.metadata.packager.deb]
-desktop-template = "packaging/app.desktop"
+desktop-template = "platform/packaging/app.desktop"
 depends = [
   "libxkbcommon0",
   "libxkbcommon-x11-0",
@@ -32,41 +117,7 @@ depends = [
 ]
 
 [package.metadata.packager.nsis]
-installer-icon = "packaging/icons/icon.ico"
-
-[lib]
-crate-type = ["cdylib", "staticlib", "rlib"]
-
-[dependencies]
-gpui = { package = "gpui-pre", version = "=0.3.9", default-features = false }
-gpui-kit = { version = "0.7.3", default-features = false, features = [
-  "component"
-] }
-log = "0.4"
-
-[target.'cfg(target_os = "ios")'.dependencies]
-# ponytail: upstream src/ios/platform_view.rs uses packages::{video_player, camera}
-# without cfg gates; drop this once gpui-mobile fixes it.
-gpui-mobile = { package = "gpui-pre-mobile", git = "https://github.com/longbridge/gpui-mobile", rev = "c24a1308e1dcb47ce94d9ef8d8d05ca4d77d2aa7", default-features = false, features = [
-  "video_player",
-  "camera"
-] }
-
-[target.'cfg(target_os = "android")'.dependencies]
-# Plugin packages are off. To re-enable one, add its feature here and undo the
-# matching "disabled" block in android/app/src/main/AndroidManifest.xml (iOS
-# usage strings are in ios/Info.plist). Available features: url_launcher,
-# shared_preferences, path_provider, package_info, device_info, connectivity,
-# network_info, vibration, battery, share, sensors, webview, file_selector,
-# image_picker, camera, permission_handler, notifications, location, audio,
-# video_player, clipboard, local_auth, in_app_review, contacts, maps_launcher,
-# maps, calendar, deeplink, microphone, media_session.
-# The Java helpers in android/app/src/main/java/dev/gpui/mobile stay compiled;
-# they are inert until a Rust feature calls them.
-gpui-mobile = { package = "gpui-pre-mobile", git = "https://github.com/longbridge/gpui-mobile", rev = "c24a1308e1dcb47ce94d9ef8d8d05ca4d77d2aa7", default-features = false, features = [
-] }
-android_logger = "0.15"
-android-activity = { version = "0.6", features = ["native-activity"] }
+installer-icon = "platform/packaging/icons/icon.ico"
 
 [profile.release]
 opt-level = "z"

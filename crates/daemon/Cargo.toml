@@ -1,0 +1,22 @@
+[package]
+name = "aurora_daemon"
+description = "Aurora background daemon"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[[bin]]
+name = "aurorad"
+path = "src/main.rs"
+
+[dependencies]
+aurora_core.workspace = true
+aurora_proto.workspace = true
+aurora_transport = { workspace = true, features = ["iroh", "bluer", "nusb"] }
+anyhow.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
