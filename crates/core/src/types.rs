@@ -28,7 +28,6 @@ pub struct PairInfo {
   pub link: String,
   pub name: String,
   pub addrs: Vec<SocketAddr>,
-  pub expires_in: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

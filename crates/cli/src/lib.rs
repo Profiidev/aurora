@@ -125,7 +125,7 @@ fn show_info(info: &PairInfo) {
   for addr in &info.addrs {
     println!("  {}", addr.ip());
   }
-  println!("{}\nwaiting for {} s...", info.link, info.expires_in);
+  println!("{}\nwaiting...", info.link);
 }
 
 /// Prints events of the running session; asks about the code

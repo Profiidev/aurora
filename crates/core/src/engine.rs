@@ -12,7 +12,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow, bail};
-use aurora_proto::{Beacon, DISCOVERY_PORT, DISCOVERY_QUERY, Id, Msg, Token, read_msg, write_msg};
+use aurora_proto::{Beacon, DISCOVERY_PORT, DISCOVERY_QUERY, Id, Msg, read_msg, write_msg};
 use aurora_transport::{
   Connection, Node, RecvStream, SendStream, load_or_create_key, random_bytes, remote_id,
 };
@@ -48,8 +48,8 @@ pub struct Settings {
 
 enum Phase {
   Idle,
+  /// The pair page is open: dialers are accepted
   Waiting {
-    token: Token,
     info: PairInfo,
   },
   /// Dialing out, or a dialer is connected and being validated
@@ -63,7 +63,6 @@ enum Phase {
 struct Session {
   sid: u64,
   phase: Phase,
-  deadline: Instant,
   cancel: watch::Sender<bool>,
 }
 
@@ -108,7 +107,6 @@ impl Engine {
       session: Mutex::new(Session {
         sid: 0,
         phase: Phase::Idle,
-        deadline: Instant::now(),
         cancel: watch::channel(false).0,
       }),
       live: Default::default(),
@@ -196,13 +194,7 @@ impl Engine {
     let s = self.session.lock().unwrap();
     match &s.phase {
       Phase::Idle => PairState::Idle,
-      Phase::Waiting { info, .. } => PairState::Waiting(PairInfo {
-        expires_in: s
-          .deadline
-          .saturating_duration_since(Instant::now())
-          .as_secs(),
-        ..info.clone()
-      }),
+      Phase::Waiting { info } => PairState::Waiting(info.clone()),
       Phase::Dialing => PairState::Dialing,
       Phase::Confirm { view, .. } => PairState::Confirm(view.clone()),
     }
@@ -212,24 +204,31 @@ impl Engine {
 
   /// Claims the single pairing session
   fn begin(self: &Arc<Self>, phase: Phase) -> Result<(u64, watch::Receiver<bool>)> {
-    let timeout_for = self.settings().pairing_timeout;
     let mut s = self.session.lock().unwrap();
     if !matches!(s.phase, Phase::Idle) {
       bail!("pairing in progress");
     }
     s.sid += 1;
     s.cancel = watch::channel(false).0;
+    // waiting lasts as long as the pair page is open
+    let waiting = matches!(phase, Phase::Waiting { .. });
     s.phase = phase;
-    s.deadline = Instant::now() + timeout_for;
     let (sid, rx) = (s.sid, s.cancel.subscribe());
     drop(s);
+    if !waiting {
+      self.arm(sid);
+    }
+    Ok((sid, rx))
+  }
 
+  /// Ends session `sid` once `pairing_timeout` passes
+  fn arm(self: &Arc<Self>, sid: u64) {
+    let timeout_for = self.settings().pairing_timeout;
     let engine = self.clone();
     tokio::spawn(async move {
       sleep(timeout_for).await;
       engine.expire(sid);
     });
-    Ok((sid, rx))
   }
 
   fn expire(&self, sid: u64) {
@@ -274,7 +273,6 @@ impl Engine {
 
   /// Shows up for dialers and waits (the QR / "Pair new device" side)
   pub fn start_pairing(self: &Arc<Self>) -> Result<PairInfo> {
-    let token: Token = random_bytes();
     let settings = self.settings();
     // IPv4 only keeps the QR code small
     let addrs: Vec<_> = (self.node.addrs().into_iter())
@@ -284,35 +282,32 @@ impl Engine {
       link: Target {
         id: self.node.id(),
         addrs: addrs.clone(),
-        token: Some(token),
       }
       .link(),
       name: settings.name,
       addrs,
-      expires_in: settings.pairing_timeout.as_secs(),
     };
-    self.begin(Phase::Waiting {
-      token,
-      info: info.clone(),
-    })?;
+    self.begin(Phase::Waiting { info: info.clone() })?;
     self.emit(Event::PairingStarted(info.clone()));
     Ok(info)
   }
 
-  /// A dialer reached us: take over the waiting session. The token (QR) is
-  /// single use because the phase leaves `Waiting` here.
-  fn claim(&self, token: Option<Token>) -> Result<(u64, watch::Receiver<bool>)> {
+  /// A dialer reached us: take over the waiting session
+  fn claim(self: &Arc<Self>, peer: &Id) -> Result<(u64, watch::Receiver<bool>)> {
+    if self.store.lock().unwrap().get(&hex(peer)).is_some() {
+      bail!("already paired");
+    }
     let mut s = self.session.lock().unwrap();
     match &s.phase {
-      Phase::Waiting { token: want, .. } => {
-        if token.is_some_and(|t| t != *want) {
-          bail!("bad pairing token");
-        }
-      }
-      _ => bail!("not waiting for a device"),
+      Phase::Waiting { .. } => {}
+      Phase::Idle => bail!("pair page is closed"),
+      _ => bail!("another pairing is in progress"),
     }
     s.phase = Phase::Dialing;
-    Ok((s.sid, s.cancel.subscribe()))
+    let (sid, rx) = (s.sid, s.cancel.subscribe());
+    drop(s);
+    self.arm(sid);
+    Ok((sid, rx))
   }
 
   async fn accept_pair(
@@ -320,10 +315,18 @@ impl Engine {
     conn: &Connection,
     mut send: SendStream,
     mut recv: RecvStream,
-    hello: (String, String, [u8; 16], Option<Token>, Vec<SocketAddr>),
+    hello: (String, String, [u8; 16], Vec<SocketAddr>),
   ) -> Result<()> {
-    let (name, os, dialer_nonce, token, addrs) = hello;
-    let (sid, cancel) = self.claim(token)?;
+    let (name, os, dialer_nonce, addrs) = hello;
+    let (sid, cancel) = match self.claim(&remote_id(conn)) {
+      Ok(c) => c,
+      Err(e) => {
+        // the dialer is untrusted: it gets a fixed reason, the detail stays in our log
+        info!("refused pairing from {name}: {e:#}");
+        conn.close(1u32.into(), b"not accepting pairing");
+        return Ok(());
+      }
+    };
     let res = async {
       let nonce: [u8; 16] = random_bytes();
       let s = self.settings();
@@ -367,10 +370,12 @@ impl Engine {
         Target {
           id: beacon.id,
           addrs: vec![addr],
-          token: None,
         }
       }
     };
+    if let Some(d) = self.store.lock().unwrap().get(&hex(&target.id)) {
+      bail!("already paired with {}", d.name);
+    }
     let (sid, cancel) = self.begin(Phase::Dialing)?;
     let engine = self.clone();
     tokio::spawn(async move {
@@ -401,7 +406,6 @@ impl Engine {
         name: s.name,
         os: s.os,
         nonce,
-        token: target.token,
         addrs: self.node.addrs(),
       },
     )
@@ -433,7 +437,8 @@ impl Engine {
     let res = self
       .confirm(sid, cancel, &mut send, &mut recv, peer, code)
       .await;
-    linger(&conn, send).await;
+    // report the outcome now; the peer still gets time to read our decision
+    tokio::spawn(async move { linger(&conn, send).await });
     res
   }
 
@@ -488,9 +493,6 @@ impl Engine {
           let accept = d.unwrap_or(false);
           local = Some(accept);
           view.local_accepted = accept;
-          if let Phase::Confirm { view: v, .. } = &mut self.session.lock().unwrap().phase {
-            v.local_accepted = accept;
-          }
           write_msg(send, &Msg::PairDecision { accept }).await?;
         }
         m = &mut remote_fut, if remote.is_none() => match m? {
@@ -521,11 +523,12 @@ impl Engine {
   pub fn decide(&self, accept: bool) -> Result<()> {
     let mut s = self.session.lock().unwrap();
     match &mut s.phase {
-      Phase::Confirm { decide, .. } => decide
-        .take()
-        .ok_or_else(|| anyhow!("already answered"))?
-        .send(accept)
-        .map_err(|_| anyhow!("pairing ended")),
+      Phase::Confirm { view, decide } => {
+        let tx = decide.take().ok_or_else(|| anyhow!("already answered"))?;
+        // set here, not in `confirm`, so a `pair_state` right after this call sees it
+        view.local_accepted = accept;
+        tx.send(accept).map_err(|_| anyhow!("pairing ended"))
+      }
       _ => bail!("no code to confirm"),
     }
   }
@@ -575,11 +578,10 @@ impl Engine {
         name,
         os,
         nonce,
-        token,
         addrs,
       } => {
         self
-          .accept_pair(&conn, send, recv, (name, os, nonce, token, addrs))
+          .accept_pair(&conn, send, recv, (name, os, nonce, addrs))
           .await
       }
       Msg::Hello {
@@ -798,7 +800,10 @@ impl Engine {
       let Ok(beacon) = postcard_from(&buf[..len]) else {
         continue;
       };
-      if beacon.id == self.node.id() || found.iter().any(|n: &Nearby| n.addr.ip() == from.ip()) {
+      if beacon.id == self.node.id()
+        || found.iter().any(|n: &Nearby| n.addr.ip() == from.ip())
+        || self.store.lock().unwrap().get(&hex(&beacon.id)).is_some()
+      {
         continue;
       }
       let addr = SocketAddr::new(from.ip(), beacon.port);
@@ -809,7 +814,6 @@ impl Engine {
         link: Target {
           id: beacon.id,
           addrs: vec![addr],
-          token: None,
         }
         .link(),
       });

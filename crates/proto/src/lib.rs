@@ -15,7 +15,6 @@ pub const DISCOVERY_QUERY: &[u8] = b"aurora?";
 const MAX_FRAME: u32 = 64 * 1024;
 
 pub type Id = [u8; 32];
-pub type Token = [u8; 16];
 
 /// Discovery reply: who answers and which port its QUIC endpoint listens on
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,7 +32,6 @@ pub enum Msg {
     name: String,
     os: String,
     nonce: [u8; 16],
-    token: Option<Token>,
     /// Where the dialer can be reached, so the acceptor can reconnect later
     addrs: Vec<SocketAddr>,
   },
@@ -96,7 +94,6 @@ mod tests {
       name: "x".into(),
       os: "Android".into(),
       nonce: [7; 16],
-      token: Some([1; 16]),
       addrs: vec![],
     };
     write_msg(&mut a, &msg).await.unwrap();

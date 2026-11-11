@@ -77,6 +77,12 @@ async fn pairs_confirms_and_unpairs() {
   // the phone knows the desktop's address, so it reconnects on its own
   next(&mut dev, |e| matches!(e, Event::DeviceConnected(_))).await;
 
+  // pairing twice fails on the dialing side
+  desktop.start_pairing().unwrap();
+  let err = phone.connect(&info.link).await.unwrap_err();
+  assert!(format!("{err:#}").contains("already paired"), "{err:#}");
+  desktop.cancel_pairing();
+
   desktop
     .unpair(&desktop.devices()[0].device.id)
     .await
@@ -87,7 +93,7 @@ async fn pairs_confirms_and_unpairs() {
 }
 
 #[tokio::test]
-async fn rejecting_pairs_nothing_and_token_is_single_use() {
+async fn rejecting_pairs_nothing_and_closed_page_refuses() {
   let (desktop, _d) = engine("desktop").await;
   let (phone, _p) = engine("phone").await;
   let (mut dev, mut pev) = (desktop.events(), phone.events());
@@ -101,22 +107,21 @@ async fn rejecting_pairs_nothing_and_token_is_single_use() {
   next(&mut pev, |e| matches!(e, Event::PairingFailed(_))).await;
   assert!(desktop.devices().is_empty() && phone.devices().is_empty());
 
-  // replaying the old QR fails: no session is waiting any more
+  // the session ended and nobody reopened the pair page
   phone.connect(&info.link).await.unwrap();
   next(&mut pev, |e| matches!(e, Event::PairingFailed(_))).await;
 }
 
 #[tokio::test]
-async fn session_expires() {
+async fn waiting_never_expires() {
   let (desktop, _d) = engine("desktop").await;
   desktop.set_settings(Settings {
     pairing_timeout: Duration::from_millis(200),
     ..settings("desktop")
   });
-  let mut events = desktop.events();
   desktop.start_pairing().unwrap();
-  next(&mut events, |e| matches!(e, Event::PairingExpired)).await;
-  assert_eq!(desktop.pair_state(), PairState::Idle);
+  tokio::time::sleep(Duration::from_millis(500)).await;
+  assert!(matches!(desktop.pair_state(), PairState::Waiting(_)));
 }
 
 #[tokio::test]
@@ -149,4 +154,21 @@ async fn ipc_commands_and_event_stream() {
   .await
   .unwrap();
   assert!(matches!(stream.1, Event::PairingStarted(i) if i.link == stream.0.link));
+}
+
+#[tokio::test]
+async fn refusal_tells_the_dialer_why() {
+  let (desktop, _d) = engine("desktop").await;
+  let (phone, _p) = engine("phone").await;
+  let mut pev = phone.events();
+
+  let info = desktop.start_pairing().unwrap();
+  desktop.cancel_pairing();
+  phone.connect(&info.link).await.unwrap();
+
+  let Event::PairingFailed(why) = next(&mut pev, |e| matches!(e, Event::PairingFailed(_))).await
+  else {
+    unreachable!()
+  };
+  assert!(why.contains("not accepting pairing"), "{why}");
 }

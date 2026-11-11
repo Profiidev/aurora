@@ -3,7 +3,7 @@
 use std::net::SocketAddr;
 
 use anyhow::{Context, Result, bail};
-use aurora_proto::{Id, Token};
+use aurora_proto::Id;
 use url::Url;
 
 pub fn hex(bytes: &[u8]) -> String {
@@ -40,7 +40,6 @@ pub fn derive_code(a: &Id, b: &Id, dialer_nonce: &[u8; 16], acceptor_nonce: &[u8
 pub struct Target {
   pub id: Id,
   pub addrs: Vec<SocketAddr>,
-  pub token: Option<Token>,
 }
 
 impl Target {
@@ -52,9 +51,6 @@ impl Target {
       for addr in &self.addrs {
         q.append_pair("addr", &addr.to_string());
       }
-      if let Some(token) = &self.token {
-        q.append_pair("token", &hex(token));
-      }
     }
     url.into()
   }
@@ -64,19 +60,17 @@ impl Target {
     if url.scheme() != "aurora" || url.host_str() != Some("pair") {
       bail!("not an aurora://pair link");
     }
-    let (mut id, mut addrs, mut token) = (None, Vec::new(), None);
+    let (mut id, mut addrs) = (None, Vec::new());
     for (key, value) in url.query_pairs() {
       match &*key {
         "id" => id = Some(unhex(&value)?),
         "addr" => addrs.push(value.parse()?),
-        "token" => token = Some(unhex(&value)?),
         _ => {}
       }
     }
     Ok(Self {
       id: id.context("link has no id")?,
       addrs,
-      token,
     })
   }
 }
@@ -104,7 +98,6 @@ mod tests {
         "192.168.1.10:4000".parse().unwrap(),
         "[::1]:4000".parse().unwrap(),
       ],
-      token: Some([9; 16]),
     };
     assert_eq!(Target::parse(&target.link()).unwrap(), target);
     assert!(Target::parse("https://pair").is_err());
