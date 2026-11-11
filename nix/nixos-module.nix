@@ -36,6 +36,8 @@ in
     lib.mkMerge [
       {
         environment.systemPackages = [ cfg.package ];
+        # lets the logged-in user open phones in USB accessory mode
+        services.udev.packages = [ cfg.package ];
 
         systemd.user.services.aurorad = {
           description = "Aurora daemon";

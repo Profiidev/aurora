@@ -29,7 +29,7 @@ rustPlatform.buildRustPackage {
     lockFile = ../Cargo.lock;
     # gpui-mobile is only used on Android/iOS, but the lockfile still vendors it
     outputHashes = {
-      "gpui-pre-mobile-0.1.0" = "sha256-PWxp1t8Q6cZ0TQKxaS67zS2hNFyJcsmWbgnJjcPzZQM=";
+      "gpui-pre-mobile-0.1.0" = "sha256-0WAb3pWoWiccTe/SwUBkfEAzrHiyElRhGaK8ug2xowk=";
     };
   };
 
@@ -65,6 +65,7 @@ rustPlatform.buildRustPackage {
       --replace-fail "{{icon}}" "aurora" \
       --replace-fail "{{name}}" "Aurora"
     sed -i '/{{/d' $out/share/applications/aurora.desktop
+    install -Dm644 platform/packaging/70-aurora.rules $out/lib/udev/rules.d/70-aurora.rules
   '';
 
   postFixup = ''
