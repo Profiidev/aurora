@@ -113,9 +113,6 @@ depends = [
   "libxcb1"
 ]
 
-[package.metadata.packager.nsis]
-installer-icon = "platform/packaging/icons/icon.ico"
-
 [dependencies]
 aurora_cli.workspace = true
 
