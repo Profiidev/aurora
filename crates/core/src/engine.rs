@@ -882,3 +882,35 @@ async fn linger_close(conn: &Connection) {
   let _ = timeout(Duration::from_secs(2), conn.closed()).await;
   conn.close(0u32.into(), b"done");
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  async fn engine(name: &str, discovery: bool) -> (Arc<Engine>, tempfile::TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    let settings = Settings {
+      name: name.into(),
+      os: "Linux".into(),
+      pairing_timeout: Duration::from_secs(60),
+      discovery,
+      port: None,
+      relay: false,
+    };
+    (Engine::start(settings, dir.path()).await.unwrap(), dir)
+  }
+
+  #[tokio::test]
+  async fn who_answers_only_while_discovery_is_on() {
+    let (asker, _a) = engine("asker", false).await;
+    let (quiet, _q) = engine("quiet", false).await;
+    let addrs = quiet.node.hints().addrs;
+    assert!(asker.who(quiet.id(), addrs.clone()).await.is_err());
+
+    let mut s = quiet.settings();
+    s.discovery = true;
+    quiet.set_settings(s);
+    let (name, os) = asker.who(quiet.id(), addrs).await.unwrap();
+    assert_eq!((name.as_str(), os.as_str()), ("quiet", "Linux"));
+  }
+}

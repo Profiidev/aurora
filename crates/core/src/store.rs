@@ -126,4 +126,49 @@ mod tests {
     assert!(store.remove("ab").unwrap());
     assert!(Store::open(dir.path()).unwrap().devices().is_empty());
   }
+
+  #[test]
+  fn loads_devices_saved_before_relay_hints() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+      dir.path().join("devices.toml"),
+      "[[device]]\nid = \"ab\"\nname = \"Pixel\"\nos = \"Android\"\npaired_at = 1\n",
+    )
+    .unwrap();
+    let store = Store::open(dir.path()).unwrap();
+    let d = store.get("ab").unwrap();
+    assert_eq!((d.relay.as_deref(), d.addrs.len()), (None, 0));
+  }
+
+  #[test]
+  fn hints_update_in_place_and_save_only_on_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open(dir.path()).unwrap();
+    for id in ["a", "b"] {
+      store
+        .insert(Device {
+          id: id.into(),
+          name: id.into(),
+          os: "Linux".into(),
+          paired_at: 1,
+          relay: None,
+          addrs: vec![],
+        })
+        .unwrap();
+    }
+    let file = dir.path().join("devices.toml");
+    let addr: SocketAddr = "10.0.0.2:4000".parse().unwrap();
+    store
+      .set_hints("a", Some("https://r/".into()), vec![addr])
+      .unwrap();
+    let saved = std::fs::read_to_string(&file).unwrap();
+    std::fs::remove_file(&file).unwrap();
+    store
+      .set_hints("a", Some("https://r/".into()), vec![addr])
+      .unwrap();
+    assert!(!file.exists(), "unchanged hints were saved again");
+    assert!(saved.contains("10.0.0.2:4000"));
+    assert_eq!(store.devices()[0].id, "a", "order kept");
+    store.set_hints("missing", None, vec![]).unwrap();
+  }
 }

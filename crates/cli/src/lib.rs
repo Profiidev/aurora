@@ -205,3 +205,20 @@ impl Config {
     Ok(())
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use clap::CommandFactory;
+
+  use super::*;
+
+  #[test]
+  fn commands_parse() {
+    Cli::command().debug_assert();
+    let cli = Cli::try_parse_from(["aurora", "pair", "connect", "aurora://pair?id=ab"]).unwrap();
+    assert!(
+      matches!(cli.command, Commands::Pair(Pair::Connect { target }) if target == "aurora://pair?id=ab")
+    );
+    assert!(Cli::try_parse_from(["aurora", "pair", "connect"]).is_err());
+  }
+}

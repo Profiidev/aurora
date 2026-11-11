@@ -305,4 +305,33 @@ mod tests {
     .unwrap();
     assert!(err.to_string().contains("bad.toml"), "{err}");
   }
+
+  #[test]
+  fn relay_is_on_unless_turned_off() {
+    let empty = tempfile::tempdir().unwrap();
+    let none = empty.path().join("none.toml");
+    let loaded = read_from(empty.path(), &none, std::iter::empty()).unwrap();
+    assert!(loaded.config.network.relay && loaded.config.settings().relay);
+    let env = [("AURORA_NETWORK__RELAY".to_string(), "false".to_string())];
+    let loaded = read_from(empty.path(), &none, env.into_iter()).unwrap();
+    assert!(!loaded.config.settings().relay);
+  }
+
+  #[test]
+  fn discovery_is_saved_without_touching_other_keys() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("settings.toml");
+    std::fs::write(&file, "[device]\nname = \"kept\"\n").unwrap();
+    set_discovery(dir.path(), false).unwrap();
+    let config = read_from(&dir.path().join("config"), &file, std::iter::empty())
+      .unwrap()
+      .config;
+    assert!(!config.pairing.discovery);
+    assert_eq!(config.device.name.as_deref(), Some("kept"));
+    set_discovery(dir.path(), true).unwrap();
+    let config = read_from(&dir.path().join("config"), &file, std::iter::empty())
+      .unwrap()
+      .config;
+    assert!(config.pairing.discovery);
+  }
 }

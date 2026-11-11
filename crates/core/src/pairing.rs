@@ -121,4 +121,20 @@ mod tests {
     assert_eq!(Target::parse(&hex(&[7; 32])).unwrap().id, [7; 32]);
     assert!(Target::parse("aurora://pair?addr=1.2.3.4:5").is_err());
   }
+
+  #[test]
+  fn links_without_relay_and_bad_ids() {
+    let target = Target {
+      id: [7; 32],
+      relay: None,
+      addrs: vec![],
+    };
+    let link = target.link();
+    assert!(!link.contains("relay="), "{link}");
+    assert_eq!(Target::parse(&link).unwrap(), target);
+    // too short for an id, and not a link either
+    assert!(Target::parse("abcd").is_err());
+    assert!(Target::parse(&format!("{}zz", hex(&[7; 31]))).is_err());
+    assert!(Target::parse("aurora://pair?relay=https://r/").is_err());
+  }
 }

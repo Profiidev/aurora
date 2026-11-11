@@ -33,3 +33,6 @@ gpui-mobile = { workspace = true, features = ["permission_handler", "clipboard"]
 jni = "0.22"
 android_logger.workspace = true
 android-activity.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

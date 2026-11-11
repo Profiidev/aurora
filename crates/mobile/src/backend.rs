@@ -134,3 +134,24 @@ pub fn device_name() -> String {
     .filter(|s| !s.is_empty())
     .unwrap_or_else(|| "Android".into())
 }
+
+#[cfg(test)]
+mod tests {
+  use aurora_ui::Backend;
+
+  use super::EngineBackend;
+
+  #[test]
+  fn discovery_is_opt_in_and_survives_a_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = EngineBackend::start(dir.path(), "phone".into(), "Android").unwrap();
+    assert!(!phone.settings().unwrap().discovery);
+    phone.set_discovery(true).unwrap();
+    drop(phone);
+
+    let phone = EngineBackend::start(dir.path(), "phone".into(), "Android").unwrap();
+    assert!(phone.settings().unwrap().discovery);
+    let saved = std::fs::read_to_string(dir.path().join("settings.toml")).unwrap();
+    assert!(saved.contains("discovery = true"), "{saved}");
+  }
+}

@@ -86,7 +86,16 @@ mod tests {
       relay: None,
       addrs: vec![],
     };
-    write_msg(&mut a, &msg).await.unwrap();
-    assert_eq!(read_msg(&mut b).await.unwrap(), msg);
+    for msg in [
+      msg,
+      Msg::Who,
+      Msg::Info {
+        name: "home".into(),
+        os: "Linux".into(),
+      },
+    ] {
+      write_msg(&mut a, &msg).await.unwrap();
+      assert_eq!(read_msg(&mut b).await.unwrap(), msg);
+    }
   }
 }
