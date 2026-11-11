@@ -1,6 +1,6 @@
 [package]
 name = "aurora_proto"
-description = "Wire messages shared by all Aurora components"
+description = "Aurora wire protocol"
 version.workspace = true
 edition.workspace = true
 repository.workspace = true
@@ -9,5 +9,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-serde.workspace = true
+anyhow.workspace = true
 postcard.workspace = true
+serde.workspace = true
+tokio = { workspace = true, features = ["io-util"] }

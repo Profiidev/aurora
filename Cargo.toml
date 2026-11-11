@@ -35,7 +35,8 @@ aurora_viewer = { path = "crates/viewer" }
 # GPUI ecosystem
 gpui = { package = "gpui-pre", version = "=0.3.10", default-features = false }
 gpui-kit = { version = "0.8.1", default-features = false, features = [
-  "component"
+  "component",
+  "assets"
 ] }
 # Plugin features: url_launcher, shared_preferences, path_provider, package_info,
 # device_info, connectivity, network_info, vibration, battery, share, sensors,
@@ -51,6 +52,8 @@ android_logger = "0.15.1"
 # Networking and transports
 bluer = "0.17.4"
 iroh = "1.4.1"
+iroh-mdns-address-lookup = "0.6.1"
+n0-future = "0.3.2"
 nusb = "0.2.9"
 
 # Async and IPC
@@ -63,6 +66,20 @@ tokio = { version = "1.54.1", features = [
   "sync",
   "macros"
 ] }
+
+# Config, files, misc
+config = { version = "0.15.27", default-features = false, features = ["toml"] }
+dirs = "6.0.0"
+flume = "0.11"
+notify = "8.2.2"
+rustix = { version = "1", features = ["process"] }
+qrcode = { version = "0.14.1", default-features = false }
+rqrr = "0.9"
+serde_ignored = "0.1.14"
+serde_json = "1.0"
+tempfile = "3"
+toml = "0.9"
+url = "2"
 
 # Serialization and crypto
 blake3 = "1.8.7"

@@ -23,10 +23,11 @@
 
     <!-- Network / connectivity permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- disabled: enable with gpui-mobile feature connectivity / network_info
+    <!-- iroh watches the network interfaces to learn its own addresses -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    -->
+    <!-- mDNS device discovery, only while the user turned it on -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <!-- disabled: enable with gpui-mobile feature vibration
     <uses-permission android:name="android.permission.VIBRATE" />
@@ -49,15 +50,11 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     -->
 
-    <!-- disabled: enable with gpui-mobile feature camera / image_picker
+    <!-- QR scanner -->
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
-    -->
 
     <!-- Vulkan feature declaration.
          `required="false"` allows the app to fall back to OpenGL ES on
@@ -144,16 +141,23 @@
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
         />
 
-        <!-- disabled: helper activities for file_selector / image_picker,
-             permission_handler and local_auth
         <activity
-            android:name="dev.gpui.mobile.GpuiPickerActivity"
+            android:name="dev.gpui.mobile.AuroraQrActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
+        />
+
+        <!-- camera permission prompt for the QR scanner -->
+        <activity
+            android:name="dev.gpui.mobile.GpuiPermissionActivity"
             android:exported="false"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
         />
 
+        <!-- disabled: helper activities for file_selector / image_picker and local_auth
         <activity
-            android:name="dev.gpui.mobile.GpuiPermissionActivity"
+            android:name="dev.gpui.mobile.GpuiPickerActivity"
             android:exported="false"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
         />

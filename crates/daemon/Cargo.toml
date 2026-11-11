@@ -17,6 +17,6 @@ aurora_core.workspace = true
 aurora_proto.workspace = true
 aurora_transport = { workspace = true, features = ["iroh", "bluer", "nusb"] }
 anyhow.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["signal"] }
 tracing.workspace = true
-tracing-subscriber.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }

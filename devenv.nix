@@ -1,4 +1,9 @@
-{ pkgs, lib, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 
 let
   # gpui desktop build deps (same as proton)
@@ -32,6 +37,8 @@ in
     ++ gpuiLibs;
 
   env.LD_LIBRARY_PATH = lib.makeLibraryPath gpuiLibs;
+  # dev daemon, CLI and GUI talk over their own socket, not an installed aurorad's
+  env.AURORA_SOCKET = "${config.devenv.runtime}/aurora.sock";
 
   languages = {
     java.jdk.package = pkgs.jdk17;

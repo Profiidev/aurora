@@ -11,3 +11,7 @@ categories.workspace = true
 [dependencies]
 aurora_core.workspace = true
 clap.workspace = true
+anyhow.workspace = true
+qrcode.workspace = true
+serde_json.workspace = true
+toml.workspace = true

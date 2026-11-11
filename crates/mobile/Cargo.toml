@@ -16,8 +16,10 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 aurora_ui.workspace = true
 aurora_core.workspace = true
 aurora_transport = { workspace = true, features = ["iroh"] }
+anyhow.workspace = true
 gpui.workspace = true
 log.workspace = true
+tokio.workspace = true
 
 [target.'cfg(target_os = "ios")'.dependencies]
 # ponytail: upstream src/ios/platform_view.rs uses packages::{video_player, camera}
@@ -25,6 +27,15 @@ log.workspace = true
 gpui-mobile = { workspace = true, features = ["video_player", "camera"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-gpui-mobile.workspace = true
+# permission_handler: the camera prompt for the QR scanner
+# clipboard: copies reach the system clipboard, not only this app
+gpui-mobile = { workspace = true, features = [
+  "permission_handler",
+  "clipboard"
+] }
+jni = "0.22"
 android_logger.workspace = true
 android-activity.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
