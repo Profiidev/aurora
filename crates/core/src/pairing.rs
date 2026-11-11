@@ -35,10 +35,12 @@ pub fn derive_code(a: &Id, b: &Id, dialer_nonce: &[u8; 16], acceptor_nonce: &[u8
   format!("{:06}", n % 1_000_000)
 }
 
-/// Where and how to reach a device for pairing
+/// Where and how to reach a device for pairing; the addresses are hints,
+/// iroh's lookups find the device by `id` alone
 #[derive(Debug, Clone, PartialEq)]
 pub struct Target {
   pub id: Id,
+  pub relay: Option<String>,
   pub addrs: Vec<SocketAddr>,
 }
 
@@ -48,6 +50,9 @@ impl Target {
     {
       let mut q = url.query_pairs_mut();
       q.append_pair("id", &hex(&self.id));
+      if let Some(relay) = &self.relay {
+        q.append_pair("relay", relay);
+      }
       for addr in &self.addrs {
         q.append_pair("addr", &addr.to_string());
       }
@@ -55,21 +60,32 @@ impl Target {
     url.into()
   }
 
+  /// An `aurora://pair` link or a bare hex endpoint id
   pub fn parse(link: &str) -> Result<Self> {
-    let url = Url::parse(link.trim()).context("not an aurora:// link")?;
+    let link = link.trim();
+    if let Ok(id) = unhex(link) {
+      return Ok(Self {
+        id,
+        relay: None,
+        addrs: Vec::new(),
+      });
+    }
+    let url = Url::parse(link).context("not an aurora:// link or device ID")?;
     if url.scheme() != "aurora" || url.host_str() != Some("pair") {
       bail!("not an aurora://pair link");
     }
-    let (mut id, mut addrs) = (None, Vec::new());
+    let (mut id, mut relay, mut addrs) = (None, None, Vec::new());
     for (key, value) in url.query_pairs() {
       match &*key {
         "id" => id = Some(unhex(&value)?),
+        "relay" => relay = Some(value.into_owned()),
         "addr" => addrs.push(value.parse()?),
         _ => {}
       }
     }
     Ok(Self {
       id: id.context("link has no id")?,
+      relay,
       addrs,
     })
   }
@@ -94,6 +110,7 @@ mod tests {
   fn link_round_trips() {
     let target = Target {
       id: [7; 32],
+      relay: Some("https://relay.example/".into()),
       addrs: vec![
         "192.168.1.10:4000".parse().unwrap(),
         "[::1]:4000".parse().unwrap(),
@@ -101,6 +118,7 @@ mod tests {
     };
     assert_eq!(Target::parse(&target.link()).unwrap(), target);
     assert!(Target::parse("https://pair").is_err());
+    assert_eq!(Target::parse(&hex(&[7; 32])).unwrap().id, [7; 32]);
     assert!(Target::parse("aurora://pair?addr=1.2.3.4:5").is_err());
   }
 }

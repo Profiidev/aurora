@@ -26,6 +26,8 @@
     <!-- iroh watches the network interfaces to learn its own addresses -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- mDNS device discovery, only while the user turned it on -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <!-- disabled: enable with gpui-mobile feature vibration
     <uses-permission android:name="android.permission.VIBRATE" />

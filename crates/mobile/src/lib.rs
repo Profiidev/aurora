@@ -3,6 +3,8 @@
 extern crate gpui_mobile;
 
 mod backend;
+#[cfg(target_os = "android")]
+mod multicast;
 pub mod platform;
 #[cfg(target_os = "android")]
 mod scanner;
@@ -16,7 +18,7 @@ pub extern "C" fn gpui_ios_register_app() {
   let dir = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
     .join("Library/Application Support/aurora");
   let backend: std::sync::Arc<dyn aurora_ui::Backend> =
-    match backend::EngineBackend::start(&dir, "iPhone".into(), "iOS", false) {
+    match backend::EngineBackend::start(&dir, "iPhone".into(), "iOS") {
       Ok(b) => std::sync::Arc::new(b),
       Err(e) => {
         log::error!("cannot start engine: {e:#}");
@@ -50,18 +52,14 @@ fn android_main(app: android_activity::AndroidApp) {
     log::error!("no internal data path");
     return;
   };
-  let backend: std::sync::Arc<dyn aurora_ui::Backend> = match backend::EngineBackend::start(
-    &dir,
-    backend::device_name(),
-    "Android",
-    platform::is_android_emulator(),
-  ) {
-    Ok(b) => std::sync::Arc::new(b),
-    Err(e) => {
-      log::error!("cannot start engine: {e:#}");
-      return;
-    }
-  };
+  let backend: std::sync::Arc<dyn aurora_ui::Backend> =
+    match backend::EngineBackend::start(&dir, backend::device_name(), "Android") {
+      Ok(b) => std::sync::Arc::new(b),
+      Err(e) => {
+        log::error!("cannot start engine: {e:#}");
+        return;
+      }
+    };
   // Blocks on the Android event loop; callback runs once the surface exists.
   gpui::Application::with_platform(shared.into_rc())
     .with_assets(aurora_ui::AppAssets)

@@ -6,6 +6,7 @@ use std::{path::Path, sync::Arc};
 
 use anyhow::Result;
 use aurora_core::{
+  config,
   engine::{Engine, Settings},
   types::{AppSettings, DeviceStatus, Event, Nearby, PairInfo, PairState},
 };
@@ -15,26 +16,38 @@ use tokio::{runtime::Runtime, sync::broadcast::error::RecvError};
 pub struct EngineBackend {
   rt: Runtime,
   engine: Arc<Engine>,
+  dir: std::path::PathBuf,
 }
 
 impl EngineBackend {
-  /// Keys and paired devices live in `dir`
-  pub fn start(dir: &Path, name: String, os: &str, emulator: bool) -> Result<Self> {
+  /// Keys, paired devices and `settings.toml` live in `dir`
+  pub fn start(dir: &Path, name: String, os: &str) -> Result<Self> {
     let rt = tokio::runtime::Builder::new_multi_thread()
       .worker_threads(2)
       .enable_all()
       .build()?;
+    let file = dir.join("settings.toml");
+    // mDNS is opt-in on the phone: it needs a multicast lock that costs battery
+    if !file.exists() {
+      config::set_discovery(dir, false)?;
+    }
+    // no user config dir on the phone, only the file the app writes
+    let loaded = config::read_from(&dir.join("config"), &file, std::iter::empty())?;
     let settings = Settings {
       name,
       os: os.into(),
       pairing_timeout: std::time::Duration::from_secs(60),
-      discovery: true,
+      discovery: loaded.config.pairing.discovery,
       port: None,
-      // the emulator reaches its host at 10.0.2.2
-      host_alias: emulator.then(|| "10.0.2.2".parse().unwrap()),
+      relay: true,
     };
+    multicast(settings.discovery);
     let engine = rt.block_on(Engine::start(settings, dir))?;
-    Ok(Self { rt, engine })
+    Ok(Self {
+      rt,
+      engine,
+      dir: dir.to_path_buf(),
+    })
   }
 }
 
@@ -72,8 +85,10 @@ impl Backend for EngineBackend {
       discovery: s.discovery,
     })
   }
-  // ponytail: not persisted, the phone has no config files; add a store when settings grow
   fn set_discovery(&self, on: bool) -> Result<()> {
+    config::set_discovery(&self.dir, on)?;
+    multicast(on);
+    let _guard = self.rt.enter();
     let mut s = self.engine.settings();
     s.discovery = on;
     self.engine.set_settings(s);
@@ -95,6 +110,16 @@ impl Backend for EngineBackend {
       Err(RecvError::Closed) => None,
     }))
   }
+}
+
+/// Android drops incoming multicast, which mDNS needs, unless the app holds a lock
+fn multicast(on: bool) {
+  #[cfg(target_os = "android")]
+  if let Err(e) = crate::multicast::set(on) {
+    log::warn!("multicast lock: {e}");
+  }
+  #[cfg(not(target_os = "android"))]
+  let _ = on;
 }
 
 /// Model name of this phone, for the name the computer shows

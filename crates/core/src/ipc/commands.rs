@@ -49,7 +49,7 @@ command!(SettingsGet, "settings:get", () => AppSettings, |_p, e| {
   })
 });
 command!(SettingsSetDiscovery, "settings:set_discovery", bool => (), |p, e| {
-  crate::config::set_discovery(p)?;
+  crate::config::set_discovery(&crate::config::state_dir(), p)?;
   let mut s = e.settings();
   s.discovery = p;
   e.set_settings(s);

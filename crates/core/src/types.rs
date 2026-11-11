@@ -9,6 +9,9 @@ pub struct Device {
   pub name: String,
   pub os: String,
   pub paired_at: u64,
+  /// Last known relay and direct addresses, hints for iroh's lookups
+  #[serde(default)]
+  pub relay: Option<String>,
   #[serde(default)]
   pub addrs: Vec<SocketAddr>,
 }
@@ -49,12 +52,12 @@ pub enum PairState {
   Confirm(Confirm),
 }
 
-/// A device that answered the discovery broadcast
+/// A device mDNS found on the local network
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Nearby {
   pub name: String,
   pub os: String,
-  pub addr: SocketAddr,
+  pub addr: Option<SocketAddr>,
   /// Pass to `pair:connect`
   pub link: String,
 }

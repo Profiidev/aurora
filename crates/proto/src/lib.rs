@@ -6,24 +6,12 @@ use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-pub const PROTOCOL_VERSION: u32 = 1;
-pub const ALPN: &[u8] = b"aurora/1";
-/// UDP port answering [`DISCOVERY_QUERY`] with a postcard [`Beacon`]
-pub const DISCOVERY_PORT: u16 = 47421;
-pub const DISCOVERY_QUERY: &[u8] = b"aurora?";
+pub const PROTOCOL_VERSION: u32 = 2;
+pub const ALPN: &[u8] = b"aurora/2";
 
 const MAX_FRAME: u32 = 64 * 1024;
 
 pub type Id = [u8; 32];
-
-/// Discovery reply: who answers and which port its QUIC endpoint listens on
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Beacon {
-  pub id: Id,
-  pub name: String,
-  pub os: String,
-  pub port: u16,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Msg {
@@ -33,6 +21,7 @@ pub enum Msg {
     os: String,
     nonce: [u8; 16],
     /// Where the dialer can be reached, so the acceptor can reconnect later
+    relay: Option<String>,
     addrs: Vec<SocketAddr>,
   },
   /// Acceptor's answer to [`Msg::PairHello`]
@@ -40,6 +29,7 @@ pub enum Msg {
     name: String,
     os: String,
     nonce: [u8; 16],
+    relay: Option<String>,
     addrs: Vec<SocketAddr>,
   },
   PairDecision {
@@ -54,14 +44,13 @@ pub enum Msg {
   },
   /// Sender removed the pairing
   Unpair,
-}
-
-pub fn encode_beacon(beacon: &Beacon) -> Result<Vec<u8>> {
-  Ok(postcard::to_stdvec(beacon)?)
-}
-
-pub fn decode_beacon(bytes: &[u8]) -> Result<Beacon> {
-  Ok(postcard::from_bytes(bytes)?)
+  /// Asks a device found on the local network for its name
+  Who,
+  /// Answer to [`Msg::Who`]
+  Info {
+    name: String,
+    os: String,
+  },
 }
 
 pub async fn write_msg<W: AsyncWrite + Unpin>(w: &mut W, msg: &Msg) -> Result<()> {
@@ -94,6 +83,7 @@ mod tests {
       name: "x".into(),
       os: "Android".into(),
       nonce: [7; 16],
+      relay: None,
       addrs: vec![],
     };
     write_msg(&mut a, &msg).await.unwrap();

@@ -12,9 +12,10 @@ fn settings(name: &str) -> Settings {
     name: name.into(),
     os: "Linux".into(),
     pairing_timeout: Duration::from_secs(60),
-    discovery: true,
+    // no mDNS or n0 in tests: devices meet through the link's direct addresses
+    discovery: false,
     port: None,
-    host_alias: None,
+    relay: false,
   }
 }
 
@@ -171,4 +172,79 @@ async fn refusal_tells_the_dialer_why() {
     unreachable!()
   };
   assert!(why.contains("not accepting pairing"), "{why}");
+}
+
+#[tokio::test]
+async fn reconnects_after_a_restart_on_a_new_port() {
+  let (ddir, pdir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+  let desktop = Engine::start(settings("desktop"), ddir.path())
+    .await
+    .unwrap();
+  let phone = Engine::start(settings("phone"), pdir.path()).await.unwrap();
+  let (mut dev, mut pev) = (desktop.events(), phone.events());
+
+  let info = desktop.start_pairing().unwrap();
+  phone.connect(&info.link).await.unwrap();
+  next(&mut dev, |e| matches!(e, Event::CodeReady(_))).await;
+  next(&mut pev, |e| matches!(e, Event::CodeReady(_))).await;
+  desktop.decide(true).unwrap();
+  phone.decide(true).unwrap();
+  next(&mut pev, |e| matches!(e, Event::Paired(_))).await;
+  next(&mut dev, |e| matches!(e, Event::Paired(_))).await;
+  let ports = (desktop.port(), phone.port());
+
+  // same keys and stores, new ports: every stored address is stale, only
+  // mDNS can bring them together again
+  desktop.shutdown().await;
+  phone.shutdown().await;
+  drop((desktop, phone));
+  let on = |name| Settings {
+    discovery: true,
+    ..settings(name)
+  };
+  let desktop = Engine::start(on("desktop"), ddir.path()).await.unwrap();
+  let phone = Engine::start(on("phone"), pdir.path()).await.unwrap();
+  assert!(desktop.port() != ports.0 && phone.port() != ports.1);
+  let (mut dev, mut pev) = (desktop.events(), phone.events());
+
+  timeout(Duration::from_secs(30), async {
+    loop {
+      if let Event::DeviceConnected(_) = dev.recv().await.unwrap() {
+        break;
+      }
+    }
+  })
+  .await
+  .expect("devices did not find each other");
+  let id = desktop.devices()[0].device.id.clone();
+  desktop.unpair(&id).await.unwrap();
+  next(&mut pev, |e| matches!(e, Event::Unpaired(_))).await;
+  assert!(phone.devices().is_empty());
+}
+
+#[tokio::test]
+async fn nearby_lists_names_over_mdns() {
+  let on = |name| Settings {
+    discovery: true,
+    ..settings(name)
+  };
+  let (dd, pd) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+  let desktop = Engine::start(on("desktop"), dd.path()).await.unwrap();
+  let _phone = Engine::start(on("phone"), pd.path()).await.unwrap();
+  timeout(Duration::from_secs(30), async {
+    loop {
+      if desktop
+        .scan()
+        .await
+        .unwrap()
+        .iter()
+        .any(|n| n.name == "phone")
+      {
+        break;
+      }
+      tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+  })
+  .await
+  .expect("phone not listed");
 }

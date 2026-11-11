@@ -5,21 +5,21 @@
 
 use std::{
   collections::{HashMap, HashSet},
-  net::{IpAddr, Ipv4Addr, SocketAddr},
+  net::SocketAddr,
   path::Path,
   sync::{Arc, Mutex, RwLock},
   time::Duration,
 };
 
 use anyhow::{Context, Result, anyhow, bail};
-use aurora_proto::{Beacon, DISCOVERY_PORT, DISCOVERY_QUERY, Id, Msg, read_msg, write_msg};
+use aurora_proto::{Id, Msg, read_msg, write_msg};
 use aurora_transport::{
-  Connection, Node, RecvStream, SendStream, load_or_create_key, random_bytes, remote_id,
+  Connection, Hints, Node, RecvStream, Seen, SendStream, Via, load_or_create_key, random_bytes,
+  remote_id, via,
 };
 use tokio::{
-  net::UdpSocket,
   sync::{broadcast, oneshot, watch},
-  time::{Instant, sleep, timeout},
+  time::{sleep, timeout},
 };
 use tracing::{debug, info, warn};
 
@@ -30,20 +30,21 @@ use crate::{
 };
 
 const RECONNECT_EVERY: Duration = Duration::from_secs(10);
-const DIAL_TIMEOUT: Duration = Duration::from_secs(5);
+/// Long enough for a lookup through n0's DNS and a relay
+const DIAL_TIMEOUT: Duration = Duration::from_secs(10);
+const WHO_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Clone)]
 pub struct Settings {
   pub name: String,
   pub os: String,
   pub pairing_timeout: Duration,
-  /// Answer discovery broadcasts
+  /// mDNS on the local network: be found, find others, tell them our name
   pub discovery: bool,
   /// Fixed QUIC port, read once when the engine starts
   pub port: Option<u16>,
-  /// Extra host to dial every known port on (the Android emulator reaches its
-  /// host at 10.0.2.2)
-  pub host_alias: Option<IpAddr>,
+  /// n0's DNS lookup and relays, read once when the engine starts
+  pub relay: bool,
 }
 
 enum Phase {
@@ -75,7 +76,9 @@ struct Peer {
   id: Id,
   name: String,
   os: String,
-  addrs: Vec<SocketAddr>,
+  hints: Hints,
+  /// How the pairing connection reaches it, for the confirm screen
+  via: Via,
 }
 
 pub struct Engine {
@@ -85,6 +88,7 @@ pub struct Engine {
   session: Mutex<Session>,
   live: Mutex<HashMap<String, Live>>,
   trying: Mutex<HashSet<String>>,
+  nearby: Mutex<HashMap<Id, Nearby>>,
   local: Mutex<(Option<u8>, bool)>,
   events: broadcast::Sender<Event>,
 }
@@ -98,7 +102,10 @@ impl Engine {
   /// reconnect and discovery loops
   pub async fn start(settings: Settings, dir: &Path) -> Result<Arc<Self>> {
     let key = load_or_create_key(&dir.join("key"))?;
-    let node = Node::bind(key, settings.port).await?;
+    let node = Node::bind(key, settings.port, settings.relay).await?;
+    if let Err(e) = node.set_mdns(settings.discovery) {
+      warn!("{e:#}");
+    }
     let (events, _) = broadcast::channel(64);
     let engine = Arc::new(Self {
       node,
@@ -111,6 +118,7 @@ impl Engine {
       }),
       live: Default::default(),
       trying: Default::default(),
+      nearby: Default::default(),
       local: Default::default(),
       events,
     });
@@ -121,7 +129,7 @@ impl Engine {
     );
     tokio::spawn(engine.clone().accept_loop());
     tokio::spawn(engine.clone().reconnect_loop());
-    tokio::spawn(engine.clone().discovery_responder());
+    tokio::spawn(engine.clone().nearby_loop());
     Ok(engine)
   }
 
@@ -134,6 +142,12 @@ impl Engine {
   }
 
   pub fn set_settings(&self, settings: Settings) {
+    if settings.discovery != self.settings().discovery {
+      if let Err(e) = self.node.set_mdns(settings.discovery) {
+        warn!("{e:#}");
+      }
+      self.nearby.lock().unwrap().clear();
+    }
     *self.settings.write().unwrap() = settings;
     self.emit(Event::ConfigChanged);
   }
@@ -274,13 +288,15 @@ impl Engine {
   /// Shows up for dialers and waits (the QR / "Pair new device" side)
   pub fn start_pairing(self: &Arc<Self>) -> Result<PairInfo> {
     let settings = self.settings();
+    let hints = self.node.hints();
     // IPv4 only keeps the QR code small
-    let addrs: Vec<_> = (self.node.addrs().into_iter())
+    let addrs: Vec<_> = (hints.addrs.into_iter())
       .filter(SocketAddr::is_ipv4)
       .collect();
     let info = PairInfo {
       link: Target {
         id: self.node.id(),
+        relay: hints.relay,
         addrs: addrs.clone(),
       }
       .link(),
@@ -315,9 +331,9 @@ impl Engine {
     conn: &Connection,
     mut send: SendStream,
     mut recv: RecvStream,
-    hello: (String, String, [u8; 16], Vec<SocketAddr>),
+    hello: (String, String, [u8; 16], Hints),
   ) -> Result<()> {
-    let (name, os, dialer_nonce, addrs) = hello;
+    let (name, os, dialer_nonce, hints) = hello;
     let (sid, cancel) = match self.claim(&remote_id(conn)) {
       Ok(c) => c,
       Err(e) => {
@@ -329,14 +345,15 @@ impl Engine {
     };
     let res = async {
       let nonce: [u8; 16] = random_bytes();
-      let s = self.settings();
+      let (s, mine) = (self.settings(), self.node.hints());
       write_msg(
         &mut send,
         &Msg::PairNonce {
           name: s.name,
           os: s.os,
           nonce,
-          addrs: self.node.addrs(),
+          relay: mine.relay,
+          addrs: mine.addrs,
         },
       )
       .await?;
@@ -346,7 +363,8 @@ impl Engine {
         id,
         name,
         os,
-        addrs,
+        hints,
+        via: via(conn),
       };
       self
         .confirm(sid, cancel, &mut send, &mut recv, peer, code)
@@ -360,19 +378,12 @@ impl Engine {
 
   // ---- pairing: dialing side --------------------------------------------
 
-  /// Pairs with a device given as an `aurora://pair` link or as a host
-  /// (`192.168.1.10`, `host:port`) that answers discovery
+  /// Pairs with a device given as an `aurora://pair` link or a hex device ID
   pub async fn connect(self: &Arc<Self>, target: &str) -> Result<()> {
-    let target = match Target::parse(target) {
-      Ok(t) => t,
-      Err(_) => {
-        let (_, beacon, addr) = self.probe(target).await?;
-        Target {
-          id: beacon.id,
-          addrs: vec![addr],
-        }
-      }
-    };
+    let target = Target::parse(target)?;
+    if target.id == self.node.id() {
+      bail!("that is this device");
+    }
     if let Some(d) = self.store.lock().unwrap().get(&hex(&target.id)) {
       bail!("already paired with {}", d.name);
     }
@@ -391,22 +402,26 @@ impl Engine {
     mut cancel: watch::Receiver<bool>,
     target: Target,
   ) -> Result<Option<Device>> {
-    let addrs = self.dial_addrs(&target.addrs);
+    let hints = Hints {
+      relay: target.relay,
+      addrs: target.addrs,
+    };
     let conn = tokio::select! {
-      conn = timeout(DIAL_TIMEOUT, self.node.connect(target.id, &addrs)) =>
+      conn = timeout(DIAL_TIMEOUT, self.node.connect(target.id, &hints)) =>
         conn.map_err(|_| anyhow!("device did not answer"))??,
       () = cancelled(&mut cancel) => bail!("cancelled"),
     };
     let (mut send, mut recv) = conn.open_bi().await?;
     let nonce: [u8; 16] = random_bytes();
-    let s = self.settings();
+    let (s, mine) = (self.settings(), self.node.hints());
     write_msg(
       &mut send,
       &Msg::PairHello {
         name: s.name,
         os: s.os,
         nonce,
-        addrs: self.node.addrs(),
+        relay: mine.relay,
+        addrs: mine.addrs,
       },
     )
     .await?;
@@ -414,6 +429,7 @@ impl Engine {
       name,
       os,
       nonce: acceptor_nonce,
+      relay,
       addrs: reported,
     } = read_msg(&mut recv)
       .await
@@ -421,7 +437,7 @@ impl Engine {
     else {
       bail!("unexpected reply");
     };
-    let mut addrs = target.addrs;
+    let mut addrs = hints.addrs;
     for a in reported {
       if !addrs.contains(&a) {
         addrs.push(a);
@@ -432,7 +448,11 @@ impl Engine {
       id: target.id,
       name,
       os,
-      addrs,
+      hints: Hints {
+        relay: relay.or(hints.relay),
+        addrs,
+      },
+      via: via(&conn),
     };
     let res = self
       .confirm(sid, cancel, &mut send, &mut recv, peer, code)
@@ -460,9 +480,9 @@ impl Engine {
       code,
       peer_name: peer.name.clone(),
       peer_os: peer.os.clone(),
-      via: match peer.addrs.first() {
-        Some(a) => format!("Local network · {}", a.ip()),
-        None => "Local network".into(),
+      via: match peer.via {
+        Via::Direct(a) => format!("Direct · {}", a.ip()),
+        Via::Relay => "Relay".into(),
       },
       fingerprint: hex(&peer.id[..8])
         .as_bytes()
@@ -513,7 +533,8 @@ impl Engine {
       name: peer.name,
       os: peer.os,
       paired_at: now(),
-      addrs: peer.addrs,
+      relay: peer.hints.relay,
+      addrs: peer.hints.addrs,
     };
     self.store.lock().unwrap().insert(device.clone())?;
     Ok(Some(device))
@@ -578,11 +599,29 @@ impl Engine {
         name,
         os,
         nonce,
+        relay,
         addrs,
       } => {
+        let hints = Hints { relay, addrs };
         self
-          .accept_pair(&conn, send, recv, (name, os, nonce, addrs))
+          .accept_pair(&conn, send, recv, (name, os, nonce, hints))
           .await
+      }
+      Msg::Who => {
+        let s = self.settings();
+        // only devices that may find us by mDNS learn our name
+        if s.discovery {
+          write_msg(
+            &mut send,
+            &Msg::Info {
+              name: s.name,
+              os: s.os,
+            },
+          )
+          .await?;
+        }
+        linger(&conn, send).await;
+        Ok(())
       }
       Msg::Hello {
         name,
@@ -610,7 +649,6 @@ impl Engine {
     sleep(Duration::from_secs(1)).await;
     loop {
       let due: Vec<Device> = (self.store.lock().unwrap().devices().iter())
-        .filter(|d| !d.addrs.is_empty())
         .filter(|d| !self.live.lock().unwrap().contains_key(&d.id))
         .cloned()
         .collect();
@@ -632,8 +670,11 @@ impl Engine {
 
   async fn dial_known(self: &Arc<Self>, device: &Device) -> Result<()> {
     let id: Id = crate::pairing::unhex(&device.id)?;
-    let addrs = self.dial_addrs(&device.addrs);
-    let conn = timeout(DIAL_TIMEOUT, self.node.connect(id, &addrs))
+    let hints = Hints {
+      relay: device.relay.clone(),
+      addrs: device.addrs.clone(),
+    };
+    let conn = timeout(DIAL_TIMEOUT, self.node.connect(id, &hints))
       .await
       .map_err(|_| anyhow!("timed out"))??;
     let (mut send, mut recv) = conn.open_bi().await?;
@@ -674,6 +715,11 @@ impl Engine {
     let Some(mut device) = self.store.lock().unwrap().get(&id).cloned() else {
       return;
     };
+    // remember the direct address that works now, for the next reconnect
+    if let Via::Direct(a) = via(&conn) {
+      let mut store = self.store.lock().unwrap();
+      let _ = store.set_hints(&id, device.relay.clone(), vec![a]);
+    }
     (device.name, device.os) = (name, os);
     let status = DeviceStatus {
       device,
@@ -735,115 +781,73 @@ impl Engine {
     conn.close(0u32.into(), b"bye");
   }
 
-  /// `addrs` plus the host alias on every port they use
-  fn dial_addrs(&self, addrs: &[SocketAddr]) -> Vec<SocketAddr> {
-    let mut out = addrs.to_vec();
-    if let Some(alias) = self.settings().host_alias {
-      for port in addrs.iter().map(SocketAddr::port) {
-        let a = SocketAddr::new(alias, port);
-        if !out.contains(&a) {
-          out.push(a);
-        }
-      }
-    }
-    out
-  }
+  // ---- nearby devices ------------------------------------------------------
 
-  // ---- discovery -----------------------------------------------------------
-
-  async fn discovery_responder(self: Arc<Self>) {
-    let socket = match UdpSocket::bind((Ipv4Addr::UNSPECIFIED, DISCOVERY_PORT)).await {
-      Ok(s) => s,
-      Err(e) => {
-        warn!("discovery responder disabled: {e}");
-        return;
-      }
-    };
-    let mut buf = [0u8; 64];
+  /// Keeps the nearby list from mDNS, asking each new device for its name
+  async fn nearby_loop(self: Arc<Self>) {
+    let mut seen = self.node.seen();
     loop {
-      let Ok((len, from)) = socket.recv_from(&mut buf).await else {
-        continue;
-      };
-      let s = self.settings();
-      if !s.discovery || &buf[..len] != DISCOVERY_QUERY {
-        continue;
-      }
-      let beacon = Beacon {
-        id: self.node.id(),
-        name: s.name,
-        os: s.os,
-        port: self.node.port(),
-      };
-      if let Ok(bytes) = postcard_bytes(&beacon) {
-        let _ = socket.send_to(&bytes, from).await;
-      }
-    }
-  }
-
-  /// Devices on the local network that answer the discovery broadcast
-  pub async fn scan(&self) -> Result<Vec<Nearby>> {
-    let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await?;
-    socket.set_broadcast(true)?;
-    socket
-      .send_to(DISCOVERY_QUERY, (Ipv4Addr::BROADCAST, DISCOVERY_PORT))
-      .await?;
-    // behind a NAT (the Android emulator) broadcasts stay inside; ask the host directly
-    if let Some(alias) = self.settings().host_alias {
-      let _ = socket
-        .send_to(DISCOVERY_QUERY, (alias, DISCOVERY_PORT))
-        .await;
-    }
-    let mut found = Vec::new();
-    let end = Instant::now() + Duration::from_millis(1200);
-    let mut buf = [0u8; 512];
-    while let Ok(Ok((len, from))) = tokio::time::timeout_at(end, socket.recv_from(&mut buf)).await {
-      let Ok(beacon) = postcard_from(&buf[..len]) else {
-        continue;
-      };
-      if beacon.id == self.node.id()
-        || found.iter().any(|n: &Nearby| n.addr.ip() == from.ip())
-        || self.store.lock().unwrap().get(&hex(&beacon.id)).is_some()
-      {
-        continue;
-      }
-      let addr = SocketAddr::new(from.ip(), beacon.port);
-      found.push(Nearby {
-        name: beacon.name,
-        os: beacon.os,
-        addr,
-        link: Target {
-          id: beacon.id,
-          addrs: vec![addr],
+      match seen.recv().await {
+        Ok(Seen::Found { id, addrs }) => {
+          if self.nearby.lock().unwrap().contains_key(&id) {
+            continue;
+          }
+          let engine = self.clone();
+          tokio::spawn(async move {
+            match timeout(WHO_TIMEOUT, engine.who(id, addrs.clone())).await {
+              Ok(Ok((name, os))) if engine.settings().discovery => {
+                let addr = addrs.iter().find(|a| a.is_ipv4()).copied();
+                let link = Target {
+                  id,
+                  relay: None,
+                  addrs,
+                }
+                .link();
+                let nearby = Nearby {
+                  name,
+                  os,
+                  addr,
+                  link,
+                };
+                engine.nearby.lock().unwrap().insert(id, nearby);
+              }
+              Ok(Err(e)) => debug!("no name from {}: {e:#}", hex(&id)),
+              _ => {}
+            }
+          });
         }
-        .link(),
-      });
+        Ok(Seen::Gone(id)) => {
+          self.nearby.lock().unwrap().remove(&id);
+        }
+        Err(broadcast::error::RecvError::Lagged(_)) => {}
+        Err(broadcast::error::RecvError::Closed) => break,
+      }
     }
-    Ok(found)
   }
 
-  /// Asks one host for its beacon; `host` is `name`, `ip` or `name:port` of
-  /// the discovery port
-  async fn probe(&self, host: &str) -> Result<(SocketAddr, Beacon, SocketAddr)> {
-    let host = host.trim();
-    let query = if host.contains(':') && host.parse::<std::net::Ipv6Addr>().is_err() {
-      host.to_string()
-    } else {
-      format!("{host}:{DISCOVERY_PORT}")
-    };
-    let to = tokio::net::lookup_host(&query)
-      .await
-      .with_context(|| format!("cannot resolve {host}"))?
-      .next()
-      .ok_or_else(|| anyhow!("cannot resolve {host}"))?;
-    let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await?;
-    socket.send_to(DISCOVERY_QUERY, to).await?;
-    let mut buf = [0u8; 512];
-    let (len, from) = timeout(Duration::from_secs(2), socket.recv_from(&mut buf))
-      .await
-      .map_err(|_| anyhow!("{host} did not answer; is Aurora running there?"))??;
-    let beacon = postcard_from(&buf[..len])?;
-    let addr = SocketAddr::new(from.ip(), beacon.port);
-    Ok((to, beacon, addr))
+  /// Name and OS of a device mDNS found
+  async fn who(&self, id: Id, addrs: Vec<SocketAddr>) -> Result<(String, String)> {
+    let conn = self.node.connect(id, &Hints { relay: None, addrs }).await?;
+    let (mut send, mut recv) = conn.open_bi().await?;
+    write_msg(&mut send, &Msg::Who).await?;
+    send.finish()?;
+    let reply = read_msg(&mut recv).await;
+    conn.close(0u32.into(), b"thanks");
+    match reply? {
+      Msg::Info { name, os } => Ok((name, os)),
+      _ => bail!("unexpected reply"),
+    }
+  }
+
+  /// Devices mDNS found on the local network, minus paired ones
+  pub async fn scan(&self) -> Result<Vec<Nearby>> {
+    let store = self.store.lock().unwrap();
+    Ok(
+      (self.nearby.lock().unwrap().iter())
+        .filter(|(id, _)| store.get(&hex(*id)).is_none())
+        .map(|(_, n)| n.clone())
+        .collect(),
+    )
   }
 
   /// Ends the session, tells peers we are going and closes the endpoint so iroh
@@ -866,14 +870,6 @@ impl Engine {
   pub fn port(&self) -> u16 {
     self.node.port()
   }
-}
-
-fn postcard_bytes(beacon: &Beacon) -> Result<Vec<u8>> {
-  aurora_proto::encode_beacon(beacon)
-}
-
-fn postcard_from(bytes: &[u8]) -> Result<Beacon> {
-  aurora_proto::decode_beacon(bytes)
 }
 
 /// Gives the peer time to read our last message before the connection goes

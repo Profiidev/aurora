@@ -33,7 +33,7 @@ enum Commands {
 enum Pair {
   /// Show a QR code and wait for a phone
   Start,
-  /// Pair with an aurora:// link or a host (`192.168.1.20`, `10.0.2.2`)
+  /// Pair with an aurora:// link or a device ID
   Connect {
     target: String,
   },
@@ -94,7 +94,8 @@ impl Pair {
       }
       Pair::Nearby => {
         for n in ipc::send::<cmd::PairNearby>(())? {
-          println!("{}  {}  {}\n  {}", n.name, n.os, n.addr, n.link);
+          let addr = n.addr.map(|a| a.ip().to_string()).unwrap_or_default();
+          println!("{}  {}  {addr}\n  {}", n.name, n.os, n.link);
         }
         Ok(())
       }

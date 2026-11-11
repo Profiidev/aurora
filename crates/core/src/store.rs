@@ -1,5 +1,6 @@
 use std::{
   io::Write,
+  net::SocketAddr,
   path::{Path, PathBuf},
   time::{SystemTime, UNIX_EPOCH},
 };
@@ -69,6 +70,23 @@ impl Store {
     self.save()
   }
 
+  /// Remembers where a device was last reached; saves only on change
+  pub fn set_hints(
+    &mut self,
+    id: &str,
+    relay: Option<String>,
+    addrs: Vec<SocketAddr>,
+  ) -> Result<()> {
+    let Some(d) = self.devices.iter_mut().find(|d| d.id == id) else {
+      return Ok(());
+    };
+    if (&d.relay, &d.addrs) == (&relay, &addrs) {
+      return Ok(());
+    }
+    (d.relay, d.addrs) = (relay, addrs);
+    self.save()
+  }
+
   pub fn remove(&mut self, id: &str) -> Result<bool> {
     let len = self.devices.len();
     self.devices.retain(|d| d.id != id);
@@ -99,6 +117,7 @@ mod tests {
       name: "Pixel".into(),
       os: "Android".into(),
       paired_at: 1,
+      relay: None,
       addrs: vec!["10.0.0.2:4000".parse().unwrap()],
     };
     let mut store = Store::open(dir.path()).unwrap();

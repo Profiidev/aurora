@@ -10,5 +10,6 @@ pub trait Transport {
 mod iroh_node;
 #[cfg(feature = "iroh")]
 pub use iroh_node::{
-  Connection, Node, RecvStream, SendStream, load_or_create_key, random_bytes, remote_id,
+  Connection, Hints, Node, RecvStream, Seen, SendStream, Via, load_or_create_key, random_bytes,
+  remote_id, via,
 };
