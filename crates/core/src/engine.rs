@@ -779,6 +779,12 @@ impl Engine {
     socket
       .send_to(DISCOVERY_QUERY, (Ipv4Addr::BROADCAST, DISCOVERY_PORT))
       .await?;
+    // behind a NAT (the Android emulator) broadcasts stay inside; ask the host directly
+    if let Some(alias) = self.settings().host_alias {
+      let _ = socket
+        .send_to(DISCOVERY_QUERY, (alias, DISCOVERY_PORT))
+        .await;
+    }
     let mut found = Vec::new();
     let end = Instant::now() + Duration::from_millis(1200);
     let mut buf = [0u8; 512];
