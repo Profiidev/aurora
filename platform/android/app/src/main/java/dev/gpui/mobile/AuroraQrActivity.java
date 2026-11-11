@@ -109,7 +109,7 @@ public final class AuroraQrActivity extends ComponentActivity {
         root.addView(new Frame(this), fill());
 
         TextView hint = new TextView(this);
-        hint.setText("Scan the QR code shown on your computer");
+        hint.setText("Scan the QR code shown on the other device");
         hint.setTextColor(FOREGROUND);
         hint.setTextSize(14);
         hint.setGravity(Gravity.CENTER);
@@ -119,7 +119,7 @@ public final class AuroraQrActivity extends ComponentActivity {
         hintLp.topMargin = dp(this, 72);
         root.addView(hint, hintLp);
 
-        // Mirrors the app's full width secondary button: 8dp radius, 48dp high, 14sp medium.
+        // Mirrors the app's full width secondary button: 8dp radius, 32dp high, 14sp medium.
         Button cancel = new Button(this);
         cancel.setText("Cancel");
         cancel.setAllCaps(false);
@@ -128,13 +128,17 @@ public final class AuroraQrActivity extends ComponentActivity {
         cancel.setTypeface(Typeface.create(Typeface.DEFAULT, 500, false));
         cancel.setStateListAnimator(null);
         cancel.setElevation(0);
+        // Button defaults to a 48dp minimum and vertical padding; drop both to hit 32dp
+        cancel.setMinHeight(0);
+        cancel.setMinimumHeight(0);
+        cancel.setPadding(0, 0, 0, 0);
         GradientDrawable shape = new GradientDrawable();
         shape.setColor(SECONDARY);
         shape.setCornerRadius(dp(this, RADIUS_DP));
         cancel.setBackground(new RippleDrawable(ColorStateList.valueOf(0x33FFFFFF), shape, null));
         cancel.setOnClickListener(v -> finish());
         FrameLayout.LayoutParams cancelLp = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(this, 48), Gravity.BOTTOM);
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(this, 32), Gravity.BOTTOM);
         cancelLp.setMargins(dp(this, 20), 0, dp(this, 20), dp(this, 32));
         root.addView(cancel, cancelLp);
         setContentView(root);
