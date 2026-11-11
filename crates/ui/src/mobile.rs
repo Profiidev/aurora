@@ -3,16 +3,17 @@
 
 use aurora_core::types::{Confirm, PairState};
 use gpui::{
-  Context, Div, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled,
-  div, prelude::FluentBuilder, px,
+  AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement,
+  StatefulInteractiveElement, Styled, div, prelude::FluentBuilder, px,
 };
 use gpui_kit::{
   assets::IconName,
   component::{
-    ActiveTheme, Disableable, Sizable, StyledExt,
+    ActiveTheme, Disableable, Sizable, StyledExt, WindowExt,
     button::{Button, ButtonVariants},
     h_flex,
-    input::{Input, OtpInput},
+    input::Input,
+    menu::{DropdownMenu, PopupMenuItem},
     separator::Separator,
     spinner::Spinner,
     switch::Switch,
@@ -23,8 +24,8 @@ use gpui_kit::{
 use crate::{
   app::{AppView, Page},
   widgets::{
-    ItemVariant, avatar, badge, card, card_content, confirm_details, error_line, field_row,
-    field_set, heading, icon, item, muted,
+    ItemVariant, avatar, badge, card, card_content, code_tiles, confirm_details, field_row,
+    field_set, heading, icon, item, muted, qr,
   },
 };
 
@@ -32,24 +33,24 @@ const ACTIONS: [(&str, IconName); 6] = [
   ("Send file", IconName::FileUp),
   ("Send clipboard", IconName::Clipboard),
   ("Share screen", IconName::ScreenShare),
-  ("Ring computer", IconName::Bell),
-  ("Lock computer", IconName::Lock),
+  ("Ring device", IconName::Bell),
+  ("Lock device", IconName::Lock),
   ("Commands", IconName::Terminal),
 ];
 
 const MODES: [(&str, &str); 4] = [
-  ("Touchpad and keyboard", "Control the computer pointer"),
+  ("Touchpad and keyboard", "Control the device's pointer"),
   ("Webcam and microphone", "Stream camera and audio"),
-  ("Second display", "Extend the computer screen"),
+  ("Second display", "Extend the device's screen"),
   ("Slides remote", "Next, previous, pointer"),
 ];
 
 const FEATURE_SETTINGS: [(&str, &str); 5] = [
-  ("Notifications", "Show them on the computer"),
+  ("Notifications", "Show them on the device"),
   ("Clipboard", "Share copied text and files"),
   ("Photo backup", "Upload new photos automatically"),
-  ("Messages", "Read and send texts from the computer"),
-  ("Pause media during calls", "On the computer"),
+  ("Messages", "Read and send texts from the device"),
+  ("Pause media during calls", "On the device"),
 ];
 
 impl AppView {
@@ -102,8 +103,9 @@ impl AppView {
           .gap_1()
           .text_size(px(11.))
           .when(!active, |t| t.text_color(cx.theme().muted_foreground))
-          .child(icon(name))
+          .child(icon(name).with_size(px(20.)))
           .child(label)
+          .cursor_pointer()
           .on_click(cx.listener(move |this, _, _, cx| this.go(page, cx)))
       }))
   }
@@ -112,47 +114,63 @@ impl AppView {
 
   fn mobile_pair(&mut self, cx: &mut Context<Self>) -> Div {
     let mut nearby = v_flex().gap_2();
+    if self.nearby.is_empty() {
+      nearby = nearby.child(muted(cx, "No devices found yet."));
+    }
     for (i, n) in self.nearby.clone().into_iter().enumerate() {
       let link = n.link.clone();
-      nearby = nearby.child(item(
-        cx,
-        ItemVariant::Outline,
-        false,
-        Some(icon(IconName::Monitor).into_any_element()),
-        n.name.clone(),
-        Some(format!("{} · {}", n.os, n.addr.ip()).into()),
-        Some(
-          Button::new(("nearby", i))
-            .secondary()
-            .small()
-            .label("Pair")
-            .on_click(cx.listener(move |this, _, _, cx| this.connect(link.clone(), cx)))
-            .into_any_element(),
-        ),
-      ));
+      nearby = nearby.child(
+        item(
+          cx,
+          ItemVariant::Outline,
+          false,
+          Some(
+            icon(IconName::Monitor)
+              .with_size(px(20.))
+              .into_any_element(),
+          ),
+          n.name.clone(),
+          Some(format!("{} · {}", n.os, n.addr.ip()).into()),
+          Some(
+            Button::new(("nearby", i))
+              .cursor_pointer()
+              .loading(self.loading(&n.link))
+              .when(self.loading(&n.link), |b| b.icon(Spinner::new()))
+              .secondary()
+              .label("Pair")
+              .on_click(
+                cx.listener(move |this, _, _, cx| this.connect(link.clone(), link.clone(), cx)),
+              )
+              .into_any_element(),
+          ),
+        )
+        .rounded_xl(),
+      );
     }
 
     let address = if self.show_address {
       v_flex().gap_2().child(Input::new(&self.address)).child(
         Button::new("by-address")
+          .cursor_pointer()
+          .loading(self.loading("by-address"))
+          .when(self.loading("by-address"), |b| b.icon(Spinner::new()))
           .outline()
           .label("Connect")
           .w_full()
-          .h(px(44.))
           .on_click(cx.listener(|this, _, _, cx| {
             let host = this.address.read(cx).value().to_string();
             if !host.trim().is_empty() {
-              this.connect(host, cx);
+              this.connect(host, "by-address", cx);
             }
           })),
       )
     } else {
       v_flex().child(
         Button::new("show-address")
-          .ghost()
+          .cursor_pointer()
+          .outline()
           .label("Connect by address or USB")
           .w_full()
-          .h(px(44.))
           .on_click(cx.listener(|this, _, _, cx| {
             this.show_address = true;
             cx.notify();
@@ -168,19 +186,21 @@ impl AppView {
       .gap_6()
       .child(heading(
         cx,
-        "Connect a computer",
-        Some("Open the app on your computer and choose Pair new device."),
+        "Connect a device",
+        Some("On the other device, choose Pair new device."),
       ))
       .child(
-        Button::new("scan")
-          .primary()
-          .icon(IconName::ScanQrCode)
-          .label("Scan QR code")
-          .w_full()
-          .h(px(48.))
-          .on_click(cx.listener(|this, _, _, cx| this.scan_qr(cx))),
+        v_flex().gap_2().child(self.show_qr(cx)).child(
+          Button::new("scan")
+            .cursor_pointer()
+            .loading(self.loading("scan"))
+            .primary()
+            .icon(IconName::ScanQrCode)
+            .label("Scan QR code")
+            .w_full()
+            .on_click(cx.listener(|this, _, _, cx| this.scan_qr(cx))),
+        ),
       )
-      .children(error_line(cx, &self.error))
       .child(Separator::horizontal())
       .child(
         v_flex()
@@ -189,22 +209,63 @@ impl AppView {
             h_flex()
               .items_center()
               .gap_2()
+              // same height with the spinner as with the button
+              .min_h(px(32.))
               .child(
                 div()
                   .flex_1()
                   .text_sm()
                   .font_medium()
-                  .child("Computers nearby"),
+                  .child("Devices nearby"),
               )
-              .when(
-                self.scanning || matches!(self.pair, PairState::Dialing),
-                |h| h.child(Spinner::new()),
+              .child(
+                if self.scanning || matches!(self.pair, PairState::Dialing) {
+                  // centred in the button's box, so the icon does not shift
+                  div()
+                    .size_8()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(Spinner::new())
+                    .into_any_element()
+                } else {
+                  Button::new("rescan")
+                    .cursor_pointer()
+                    .ghost()
+                    .icon(IconName::RefreshCw)
+                    .on_click(cx.listener(|this, _, _, cx| this.scan(cx)))
+                    .into_any_element()
+                },
               ),
           )
           .child(nearby),
       )
       .child(div().flex_1())
       .child(address)
+  }
+
+  /// This phone's own pairing QR, for a device that scans instead
+  fn show_qr(&self, cx: &mut Context<Self>) -> Button {
+    let link = self.info.as_ref().map(|i| i.link.clone());
+    Button::new("show-qr")
+      .cursor_pointer()
+      .outline()
+      .icon(IconName::QrCode)
+      .label("Show QR code")
+      .w_full()
+      .disabled(link.is_none())
+      .on_click(cx.listener(move |_, _, window, cx| {
+        let Some(link) = link.clone() else { return };
+        window.open_dialog(cx, move |dialog, _, cx| {
+          dialog.w(px(320.)).title("Pair this device").child(
+            v_flex()
+              .items_center()
+              .gap_3()
+              .child(qr(&link, 240.))
+              .child(muted(cx, "Scan this with the other device.")),
+          )
+        });
+      }))
   }
 
   // ---- confirm -----------------------------------------------------------------
@@ -215,24 +276,28 @@ impl AppView {
         .justify_center()
         .gap_2()
         .child(Spinner::new())
-        .child(muted(cx, "Waiting for the computer…"))
+        .child(muted(cx, "Now confirm the code on the other device"))
     } else {
       v_flex()
         .gap_2()
         .child(
           Button::new("pair")
+            .cursor_pointer()
+            .loading(self.loading("pair"))
+            .when(self.loading("pair"), |b| b.icon(Spinner::new()))
             .primary()
             .label("Pair")
             .w_full()
-            .h(px(48.))
             .on_click(cx.listener(|this, _, _, cx| this.decide(true, cx))),
         )
         .child(
           Button::new("mismatch")
+            .cursor_pointer()
+            .loading(self.loading("mismatch"))
+            .when(self.loading("mismatch"), |b| b.icon(Spinner::new()))
             .outline()
             .label("Codes don't match")
             .w_full()
-            .h(px(48.))
             .on_click(cx.listener(|this, _, _, cx| this.decide(false, cx))),
         )
     };
@@ -252,6 +317,7 @@ impl AppView {
           .text_color(cx.theme().muted_foreground)
           .child(icon(IconName::ChevronLeft).small())
           .child("Back")
+          .cursor_pointer()
           .on_click(cx.listener(|this, _, _, cx| this.decide(false, cx))),
       )
       .child(
@@ -269,23 +335,18 @@ impl AppView {
           )
           .child(
             div()
-              .max_w(px(300.))
               .text_sm()
               .text_center()
               .text_color(cx.theme().muted_foreground)
-              .child("Make sure your computer shows the same code."),
+              .child("Make sure the other device shows the same code."),
           ),
       )
-      .child(
-        h_flex()
-          .justify_center()
-          .child(OtpInput::new(&self.otp).disabled(true)),
-      )
+      .child(h_flex().justify_center().child(code_tiles(cx, &c.code)))
       .child(
         card(cx, true).child(card_content(true).child(confirm_details(
           cx,
           c,
-          "Computer",
+          "Device",
           "Fingerprint",
         ))),
       )
@@ -389,6 +450,7 @@ impl AppView {
               Some(description.into()),
               Some(
                 Button::new(label)
+                  .cursor_pointer()
                   .ghost()
                   .small()
                   .icon(IconName::ChevronRight)
@@ -402,17 +464,57 @@ impl AppView {
 
   // ---- settings ----------------------------------------------------------------
 
+  /// Switches which paired device the tabs show
+  fn device_picker(&self, current: &str, cx: &mut Context<Self>) -> AnyElement {
+    let devices: Vec<_> = (self.devices.iter())
+      .map(|d| (d.device.id.clone(), d.device.name.clone()))
+      .collect();
+    let selected = self.selected.clone();
+    let view = cx.entity().downgrade();
+    Button::new("device-picker")
+      .cursor_pointer()
+      .outline()
+      .label(current.to_string())
+      .dropdown_caret(true)
+      .dropdown_menu(move |menu, window, _| {
+        // shortcut: the button spans the page minus its px_5 padding; measure it if the layout changes
+        let mut menu = menu.min_w(window.bounds().size.width - px(40.));
+        for (id, name) in &devices {
+          let (view, id) = (view.clone(), id.clone());
+          menu = menu.item(
+            PopupMenuItem::new(name.clone())
+              .checked(selected.as_ref() == Some(&id))
+              .on_click(move |_, _, cx| {
+                let _ = view.update(cx, |this, cx| {
+                  this.selected = Some(id.clone());
+                  cx.notify();
+                });
+              }),
+          );
+        }
+        menu
+      })
+      .into_any_element()
+  }
+
   fn mobile_settings(&mut self, cx: &mut Context<Self>) -> Div {
     let Some(d) = self.selected_device().cloned() else {
       return div();
     };
     let id = d.device.id.clone();
+    let picker = self.device_picker(&d.device.name, cx);
     let features = field_set(
       cx,
-      d.device.name.clone(),
+      picker,
       None,
       FEATURE_SETTINGS.map(|(label, description)| {
-        field_row(cx, label, description, Switch::new(label).disabled(true)).into_any_element()
+        field_row(
+          cx,
+          label,
+          description,
+          Switch::new(label).cursor_pointer().disabled(true),
+        )
+        .into_any_element()
       }),
     );
     v_flex()
@@ -425,10 +527,12 @@ impl AppView {
       .child(Separator::horizontal())
       .child(
         Button::new("unpair")
+          .cursor_pointer()
+          .loading(self.loading("unpair"))
+          .when(self.loading("unpair"), |b| b.icon(Spinner::new()))
           .danger()
           .label(format!("Unpair {}", d.device.name))
           .w_full()
-          .h(px(44.))
           .on_click(cx.listener(move |this, _, _, cx| this.unpair(id.clone(), cx))),
       )
   }

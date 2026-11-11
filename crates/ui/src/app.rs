@@ -1,14 +1,8 @@
-use std::{
-  sync::Arc,
-  time::{Duration, Instant},
-};
+use std::{sync::Arc, time::Duration};
 
 use aurora_core::types::{AppSettings, DeviceStatus, Event, Nearby, PairInfo, PairState};
 use gpui::{AppContext, Context, Entity, IntoElement, Render, SharedString, Styled, Window};
-use gpui_kit::component::{
-  ActiveTheme,
-  input::{InputState, OtpState},
-};
+use gpui_kit::component::{ActiveTheme, WindowExt, input::InputState, notification::Notification};
 
 use crate::Backend;
 
@@ -36,18 +30,19 @@ pub struct AppView {
   pub(crate) selected: Option<String>,
   pub(crate) pair: PairState,
   /// The waiting session shown as QR code, and when it ends
-  pub(crate) info: Option<(PairInfo, Instant)>,
+  pub(crate) info: Option<PairInfo>,
   pub(crate) nearby: Vec<Nearby>,
   pub(crate) scanning: bool,
   /// Shown on the pair page after a failed or expired session
   pub(crate) error: Option<SharedString>,
+  /// Key of the button whose action is still running; it shows a spinner
+  pub(crate) busy: Option<SharedString>,
   /// The daemon cannot be reached
   pub(crate) offline: bool,
   pub(crate) settings: Option<AppSettings>,
   pub(crate) address: Entity<InputState>,
   /// Relay server field of the settings, not wired up yet
   pub(crate) relay: Entity<InputState>,
-  pub(crate) otp: Entity<OtpState>,
   /// Mobile: the address field behind "Connect by address or USB"
   pub(crate) show_address: bool,
   /// The first device list decides where the app opens
@@ -68,7 +63,6 @@ impl AppView {
     };
     let address = cx.new(|cx| InputState::new(window, cx).placeholder(placeholder));
     let relay = cx.new(|cx| InputState::new(window, cx).placeholder("https://relay.example.com"));
-    let otp = cx.new(|cx| OtpState::new(6, window, cx));
 
     // events arrive on a blocking iterator; hand them to the UI thread
     let (tx, rx) = flume::unbounded();
@@ -92,7 +86,7 @@ impl AppView {
     })
     .detach();
 
-    // drives the countdown and keeps the nearby list fresh
+    // keeps the nearby list fresh
     cx.spawn(async move |this, cx| {
       loop {
         cx.background_executor().timer(Duration::from_secs(1)).await;
@@ -114,11 +108,11 @@ impl AppView {
       nearby: Vec::new(),
       scanning: false,
       error: None,
+      busy: None,
       offline: false,
       settings: None,
       address,
       relay,
-      otp,
       show_address: false,
       loaded: false,
       tick: 0,
@@ -162,6 +156,10 @@ impl AppView {
       |this, (devices, state, settings), cx| {
         this.offline = devices.is_err();
         if let (Ok(devices), Ok(state)) = (devices, state) {
+          // the daemon lost our waiting session (it restarted): the QR shown is dead
+          if this.on_pair_page() && this.info.is_some() && matches!(state, PairState::Idle) {
+            this.rearm(cx);
+          }
           this.devices = devices;
           this.pair = state;
         }
@@ -178,7 +176,10 @@ impl AppView {
         // nothing paired: open on pairing, like a first run
         let first = !this.loaded && !this.offline;
         this.loaded |= first;
-        if this.devices.is_empty() && !this.offline && (first || this.page == Page::Home) {
+        // mobile shows only the pair screen then, so its page must match
+        let mobile = this.platform == Platform::Mobile;
+        if this.devices.is_empty() && !this.offline && (first || mobile || this.page == Page::Home)
+        {
           this.go(Page::Pair, cx);
         }
         cx.notify();
@@ -187,6 +188,16 @@ impl AppView {
   }
 
   fn on_event(&mut self, event: Event, cx: &mut Context<Self>) {
+    if matches!(
+      event,
+      Event::CodeReady(_)
+        | Event::Paired(_)
+        | Event::PairingFailed(_)
+        | Event::PairingExpired
+        | Event::Unpaired(_)
+    ) {
+      self.busy = None;
+    }
     match &event {
       Event::Paired(device) => {
         self.selected = Some(device.id.clone());
@@ -199,7 +210,8 @@ impl AppView {
         self.error = Some(format!("Pairing failed: {why}").into());
         self.rearm(cx);
       }
-      Event::PairingCancelled => self.rearm(cx),
+      // a busy dial cancelled our waiting session itself; rearming would race it
+      Event::PairingCancelled if self.busy.is_none() => self.rearm(cx),
       Event::Unpaired(id) if self.selected.as_ref() == Some(id) => self.selected = None,
       _ => {}
     }
@@ -213,7 +225,6 @@ impl AppView {
       if self.tick.is_multiple_of(5) && !self.scanning {
         self.scan(cx);
       }
-      cx.notify();
     }
   }
 
@@ -231,6 +242,7 @@ impl AppView {
       self.open_pair(cx);
     } else if page != Page::Pair && was_pairing {
       self.info = None;
+      self.busy = None;
       if !matches!(self.pair, PairState::Confirm(_)) {
         self.bg(cx, |b| b.cancel_pairing(), |_, _, _| {});
       }
@@ -251,9 +263,8 @@ impl AppView {
         },
       },
       |this, info, cx| {
-        if let Some(info) = info {
-          let end = Instant::now() + Duration::from_secs(info.expires_in);
-          this.info = Some((info, end));
+        if info.is_some() {
+          this.info = info;
         }
         cx.notify();
       },
@@ -284,8 +295,22 @@ impl AppView {
 
   // ---- actions -----------------------------------------------------------------
 
-  pub(crate) fn connect(&mut self, target: String, cx: &mut Context<Self>) {
+  /// Buttons without an icon also need `.icon(Spinner)`: gpui-kit draws the
+  /// loading spinner in place of the icon
+  pub(crate) fn loading(&self, key: &str) -> bool {
+    self.busy.as_deref() == Some(key)
+  }
+
+  /// `key` names the button that shows a spinner until the dial ends
+  pub(crate) fn connect(
+    &mut self,
+    target: String,
+    key: impl Into<SharedString>,
+    cx: &mut Context<Self>,
+  ) {
     self.error = None;
+    self.busy = Some(key.into());
+    cx.notify();
     self.bg(
       cx,
       move |b| {
@@ -296,6 +321,7 @@ impl AppView {
       |this, res, cx| {
         if let Err(e) = res {
           this.error = Some(format!("{e:#}").into());
+          this.busy = None;
           this.rearm(cx);
         }
         this.refresh(cx);
@@ -315,7 +341,7 @@ impl AppView {
       },
       |this, res, cx| {
         match res {
-          Ok(Some(link)) => this.connect(link, cx),
+          Ok(Some(link)) => this.connect(link, "scan", cx),
           Ok(None) => this.rearm(cx),
           Err(e) => {
             this.error = Some(format!("{e:#}").into());
@@ -328,12 +354,36 @@ impl AppView {
   }
 
   pub(crate) fn decide(&mut self, accept: bool, cx: &mut Context<Self>) {
-    self.bg(cx, move |b| b.decide(accept), |_, _, _| {});
-    self.refresh(cx);
+    self.busy = Some(if accept { "pair" } else { "mismatch" }.into());
+    cx.notify();
+    self.bg(
+      cx,
+      move |b| b.decide(accept),
+      |this, res, cx| {
+        if let Err(e) = res {
+          this.error = Some(format!("{e:#}").into());
+          this.busy = None;
+        }
+        // shows the waiting state once our answer is in
+        this.refresh(cx);
+      },
+    );
   }
 
   pub(crate) fn unpair(&mut self, id: String, cx: &mut Context<Self>) {
-    self.bg(cx, move |b| b.unpair(&id), |_, _, _| {});
+    self.busy = Some("unpair".into());
+    cx.notify();
+    self.bg(
+      cx,
+      move |b| b.unpair(&id),
+      |this, res, cx| {
+        if let Err(e) = res {
+          this.error = Some(format!("{e:#}").into());
+          this.busy = None;
+          cx.notify();
+        }
+      },
+    );
   }
 
   pub(crate) fn set_discovery(&mut self, on: bool, cx: &mut Context<Self>) {
@@ -358,12 +408,19 @@ impl AppView {
 
 impl Render for AppView {
   fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-    // the confirm code is shown in a read-only OTP field
-    if let PairState::Confirm(c) = &self.pair
-      && self.otp.read(cx).value().as_ref() != c.code
-    {
-      let code = c.code.clone();
-      self.otp.update(cx, |s, cx| s.set_value(code, window, cx));
+    // async results have no window, so errors queue here and become toasts
+    if let Some(e) = self.error.take() {
+      cx.defer_in(window, move |_, window, cx| {
+        window.push_notification(Notification::error(e), cx)
+      });
+    }
+    // a device dialed in: the code screen must not sit under the QR dialog
+    if matches!(self.pair, PairState::Confirm(_)) {
+      cx.defer_in(window, |_, window, cx| {
+        if window.has_active_dialog(cx) {
+          window.close_all_dialogs(cx);
+        }
+      });
     }
     let page = match self.platform {
       Platform::Desktop => self.desktop(cx),

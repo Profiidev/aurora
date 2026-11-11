@@ -14,21 +14,30 @@ use gpui_kit::{
 };
 use qrcode::{Color, QrCode};
 
+// every icon drawn on Android must be listed: the default set does not load there
 gpui_kit::assets::icon_assets!(
   ExtraIcons,
   [
     Bell,
+    Check,
+    ChevronDown,
     ChevronLeft,
     ChevronRight,
+    CircleCheck,
+    CircleX,
     Clipboard,
+    Close,
     ExternalLink,
     FileUp,
     House,
+    Info,
     Laptop,
+    Loader,
     Lock,
     Monitor,
     MonitorSmartphone,
     Plus,
+    QrCode,
     RefreshCw,
     Repeat,
     ScanQrCode,
@@ -38,7 +47,8 @@ gpui_kit::assets::icon_assets!(
     SkipBack,
     SkipForward,
     Smartphone,
-    Terminal
+    Terminal,
+    TriangleAlert
   ]
 );
 
@@ -71,15 +81,6 @@ pub fn muted(cx: &App, text: impl Into<SharedString>) -> Div {
     .text_sm()
     .text_color(cx.theme().muted_foreground)
     .child(text.into())
-}
-
-pub fn error_line(cx: &App, error: &Option<SharedString>) -> Option<Div> {
-  error.as_ref().map(|e| {
-    div()
-      .text_sm()
-      .text_color(cx.theme().danger)
-      .child(e.clone())
-  })
 }
 
 /// Page title (24px semibold) with its muted subtitle
@@ -199,7 +200,7 @@ pub fn field_row(cx: &App, label: &str, description: &str, control: impl IntoEle
 /// FieldSet with legend, optional description and a group of fields
 pub fn field_set(
   cx: &App,
-  legend: impl Into<SharedString>,
+  legend: impl IntoElement,
   description: Option<&str>,
   fields: impl IntoIterator<Item = AnyElement>,
 ) -> Div {
@@ -208,7 +209,7 @@ pub fn field_set(
     .child(
       v_flex()
         .gap_1p5()
-        .child(div().font_medium().child(legend.into()))
+        .child(div().font_medium().child(legend))
         .children(description.map(|d| muted(cx, d.to_string()))),
     )
     .child(v_flex().gap_7().children(fields))
@@ -236,6 +237,25 @@ pub fn avatar(cx: &App, name: IconName, side: f32, radius: f32) -> Div {
 
 pub fn online_color() -> Hsla {
   gpui::hsla(145. / 360., 0.6, 0.45, 1.0)
+}
+
+/// The confirm code as two filled blocks of three digits; read-only, so no input look
+pub fn code_tiles(cx: &App, code: &str) -> Div {
+  let group = |part: &str| {
+    h_flex()
+      .h(px(48.))
+      .px_3()
+      .gap_2()
+      .items_center()
+      .rounded_lg()
+      .bg(cx.theme().muted)
+      .text_2xl()
+      .font_semibold()
+      .font_family(cx.theme().mono_font_family.clone())
+      .children(part.chars().map(|d| d.to_string()))
+  };
+  let (a, b) = code.split_at(code.len() / 2);
+  h_flex().gap_3().child(group(a)).child(group(b))
 }
 
 /// Label / value grid of the confirm screens

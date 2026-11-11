@@ -2,8 +2,6 @@
 //! "Desktop · Confirm pairing code", "Desktop · Device overview" and
 //! "Desktop · Settings".
 
-use std::time::Instant;
-
 use aurora_core::types::{Confirm, PairState};
 use gpui::{
   AnyElement, ClickEvent, Context, Div, InteractiveElement, IntoElement, ParentElement,
@@ -15,8 +13,7 @@ use gpui_kit::{
     ActiveTheme, Disableable, Sizable, StyledExt,
     button::{Button, ButtonVariants},
     h_flex,
-    input::{Input, OtpInput},
-    progress::Progress,
+    input::Input,
     separator::Separator,
     spinner::Spinner,
     switch::Switch,
@@ -27,7 +24,7 @@ use gpui_kit::{
 use crate::{
   app::{AppView, Page},
   widgets::{
-    ItemVariant, badge, card, card_content, card_header, confirm_details, error_line, field_row,
+    ItemVariant, badge, card, card_content, card_header, code_tiles, confirm_details, field_row,
     field_set, heading, icon, item, muted, online_color, qr,
   },
 };
@@ -224,15 +221,7 @@ impl AppView {
   fn desktop_pair(&mut self, cx: &mut Context<Self>) -> Div {
     let scan = {
       let body = match &self.info {
-        Some((info, end)) => {
-          let left = end.saturating_duration_since(Instant::now()).as_secs_f32();
-          let pct = (left / info.expires_in.max(1) as f32 * 100.0).clamp(0.0, 100.0);
-          v_flex()
-            .items_center()
-            .gap_4()
-            .child(qr(&info.link, 200.0))
-            .child(Progress::new("countdown").value(pct).w(px(200.)))
-        }
+        Some(info) => v_flex().items_center().child(qr(&info.link, 200.0)),
         None => v_flex()
           .items_center()
           .justify_center()
@@ -246,9 +235,7 @@ impl AppView {
           cx,
           false,
           "Scan with your phone",
-          Some(
-            "The code holds this computer's key and address. It refreshes every 60 seconds.".into(),
-          ),
+          Some("The code holds this device's key and address.".into()),
           None,
         ))
         .child(card_content(false).child(body))
@@ -256,9 +243,17 @@ impl AppView {
 
     let nearby = {
       let action = if self.scanning {
-        Spinner::new().into_any_element()
+        // centred in the button's box, so the icon does not shift
+        div()
+          .size_6()
+          .flex()
+          .items_center()
+          .justify_center()
+          .child(Spinner::new().small())
+          .into_any_element()
       } else {
         Button::new("rescan")
+          .cursor_pointer()
           .ghost()
           .small()
           .icon(IconName::RefreshCw)
@@ -280,10 +275,15 @@ impl AppView {
           Some(format!("{} · {}", n.os, n.addr.ip()).into()),
           Some(
             Button::new(("nearby", i))
+              .cursor_pointer()
+              .loading(self.loading(&n.link))
+              .when(self.loading(&n.link), |b| b.icon(Spinner::new()))
               .secondary()
               .small()
               .label("Pair")
-              .on_click(cx.listener(move |this, _, _, cx| this.connect(link.clone(), cx)))
+              .on_click(
+                cx.listener(move |this, _, _, cx| this.connect(link.clone(), link.clone(), cx)),
+              )
               .into_any_element(),
           ),
         ));
@@ -321,12 +321,15 @@ impl AppView {
             )
             .child(
               Button::new("by-address")
+                .cursor_pointer()
+                .loading(self.loading("by-address"))
+                .when(self.loading("by-address"), |b| b.icon(Spinner::new()))
                 .outline()
                 .label("Connect")
                 .on_click(cx.listener(|this, _, _, cx| {
                   let host = this.address.read(cx).value().to_string();
                   if !host.trim().is_empty() {
-                    this.connect(host, cx);
+                    this.connect(host, "by-address", cx);
                   }
                 })),
             ),
@@ -340,9 +343,8 @@ impl AppView {
       .child(heading(
         cx,
         "Pair a new device",
-        Some("Open the app on your phone, then scan the code or pick this computer from the list."),
+        Some("Open the app on your phone, then scan the code or pick this device from the list."),
       ))
-      .children(error_line(cx, &self.error))
       .child(
         h_flex()
           .items_start()
@@ -375,16 +377,22 @@ impl AppView {
       .map(|f| {
         if c.local_accepted {
           f.child(Spinner::new().small())
-            .child(muted(cx, "Waiting for your phone…"))
+            .child(muted(cx, "Now confirm the code on your phone"))
         } else {
           f.child(
             Button::new("mismatch")
+              .cursor_pointer()
+              .loading(self.loading("mismatch"))
+              .when(self.loading("mismatch"), |b| b.icon(Spinner::new()))
               .outline()
               .label("Codes don't match")
               .on_click(cx.listener(|this, _, _, cx| this.decide(false, cx))),
           )
           .child(
             Button::new("pair")
+              .cursor_pointer()
+              .loading(self.loading("pair"))
+              .when(self.loading("pair"), |b| b.icon(Spinner::new()))
               .primary()
               .label("Pair")
               .on_click(cx.listener(|this, _, _, cx| this.decide(true, cx))),
@@ -407,7 +415,7 @@ impl AppView {
             .items_center()
             .gap_5()
             .py_2()
-            .child(OtpInput::new(&self.otp).disabled(true))
+            .child(code_tiles(cx, &c.code))
             .child(Separator::horizontal().w_full())
             .child(confirm_details(cx, c, "Device", "Key fingerprint")),
         ),
@@ -480,18 +488,21 @@ impl AppView {
           .gap_2()
           .child(
             Button::new("ring")
+              .cursor_pointer()
               .outline()
               .label("Ring phone")
               .disabled(true),
           )
           .child(
             Button::new("clip")
+              .cursor_pointer()
               .outline()
               .label("Send clipboard")
               .disabled(true),
           )
           .child(
             Button::new("file")
+              .cursor_pointer()
               .primary()
               .label("Send file")
               .disabled(true),
@@ -508,6 +519,7 @@ impl AppView {
         None,
         Some(
           Button::new("all")
+            .cursor_pointer()
             .ghost()
             .xsmall()
             .label("View all")
@@ -552,6 +564,7 @@ impl AppView {
             .gap_2()
             .child(
               Button::new("webcam")
+                .cursor_pointer()
                 .outline()
                 .small()
                 .label("Webcam")
@@ -559,6 +572,7 @@ impl AppView {
             )
             .child(
               Button::new("mic")
+                .cursor_pointer()
                 .outline()
                 .small()
                 .label("Microphone")
@@ -566,6 +580,7 @@ impl AppView {
             )
             .child(
               Button::new("display")
+                .cursor_pointer()
                 .outline()
                 .small()
                 .label("Second display")
@@ -591,6 +606,7 @@ impl AppView {
           .child(badge("Not available", false))
           .child(
             Button::new("popout")
+              .cursor_pointer()
               .ghost()
               .small()
               .icon(IconName::ExternalLink)
@@ -611,9 +627,19 @@ impl AppView {
           .justify_center()
           .child(muted(cx, "Coming soon")),
       )
-      .child(h_flex().justify_center().gap_1().children(
-        ["Back", "Home", "Recents"].map(|l| Button::new(l).ghost().small().label(l).disabled(true)),
-      ));
+      .child(
+        h_flex()
+          .justify_center()
+          .gap_1()
+          .children(["Back", "Home", "Recents"].map(|l| {
+            Button::new(l)
+              .cursor_pointer()
+              .ghost()
+              .small()
+              .label(l)
+              .disabled(true)
+          })),
+      );
 
     page.child(header).child(
       h_flex()
@@ -677,8 +703,9 @@ impl AppView {
         field_row(
           cx,
           "Discover on local network",
-          "Announce this computer to phones on the same network.",
+          "Announce this device to other devices on the same network.",
           Switch::new("discovery")
+            .cursor_pointer()
             .checked(discovery)
             .on_click(cx.listener(|this, on: &bool, _, cx| this.set_discovery(*on, cx))),
         )
@@ -687,7 +714,7 @@ impl AppView {
           cx,
           "Connect away from home",
           "Use a relay when a direct connection fails.",
-          Switch::new("relay-on").disabled(true),
+          Switch::new("relay-on").cursor_pointer().disabled(true),
         )
         .into_any_element(),
         v_flex()
@@ -700,7 +727,7 @@ impl AppView {
           cx,
           "USB connection",
           "Connect over a cable when one is plugged in.",
-          Switch::new("usb").disabled(true),
+          Switch::new("usb").cursor_pointer().disabled(true),
         )
         .into_any_element(),
       ],
@@ -720,7 +747,13 @@ impl AppView {
         format!("Features for {}", d.device.name),
         Some("Each feature can be turned off per device."),
         FEATURE_SETTINGS.map(|(label, description)| {
-          field_row(cx, label, description, Switch::new(label).disabled(true)).into_any_element()
+          field_row(
+            cx,
+            label,
+            description,
+            Switch::new(label).cursor_pointer().disabled(true),
+          )
+          .into_any_element()
         }),
       );
       let id = d.device.id.clone();
@@ -752,6 +785,9 @@ impl AppView {
             )
             .child(
               Button::new("unpair")
+                .cursor_pointer()
+                .loading(self.loading("unpair"))
+                .when(self.loading("unpair"), |b| b.icon(Spinner::new()))
                 .danger()
                 .label("Unpair device")
                 .on_click(cx.listener(move |this, _, _, cx| this.unpair(id.clone(), cx))),
