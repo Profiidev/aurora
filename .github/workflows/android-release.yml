@@ -28,6 +28,14 @@ jobs:
         with:
           tool: cargo-ndk,just
 
+      # PR build check: no fat LTO and no optimization, it only proves the app builds
+      - name: Fast build settings
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "CARGO_PROFILE_RELEASE_LTO=off" >> "$GITHUB_ENV"
+          echo "CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16" >> "$GITHUB_ENV"
+          echo "CARGO_PROFILE_RELEASE_OPT_LEVEL=0" >> "$GITHUB_ENV"
+
       - name: Cache cargo and rust files
         id: rust_cache
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2

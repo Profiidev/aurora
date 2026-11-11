@@ -29,11 +29,21 @@
         pkgs = import nixpkgs {
           inherit system;
         };
+
+        pkg = pkgs.callPackage ./nix/package.nix { };
       in
       {
-        packages = rec {
-          default = aurora;
-          aurora = pkgs.callPackage ./nix/package.nix { };
+        packages = {
+          default = pkg;
+          aurora = pkg;
+          # PR build check: no fat LTO and no optimization, it only proves the package builds
+          ci = pkg.overrideAttrs (old: {
+            env = (old.env or { }) // {
+              CARGO_PROFILE_RELEASE_LTO = "off";
+              CARGO_PROFILE_RELEASE_CODEGEN_UNITS = "16";
+              CARGO_PROFILE_RELEASE_OPT_LEVEL = "0";
+            };
+          });
         };
       }
     ))
