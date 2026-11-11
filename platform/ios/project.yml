@@ -88,7 +88,7 @@ targets:
         'RUST_TRIPLE[sdk=iphoneos*]': aarch64-apple-ios
         'RUST_TRIPLE[sdk=iphonesimulator*][arch=arm64]': aarch64-apple-ios-sim
         'RUST_TRIPLE[sdk=iphonesimulator*][arch=x86_64]': x86_64-apple-ios
-        RUST_STATIC_LIB: '$(PROJECT_DIR)/../target/$(RUST_TRIPLE)/$(RUST_PROFILE)/libaurora.a'
+        RUST_STATIC_LIB: '$(PROJECT_DIR)/../../target/$(RUST_TRIPLE)/$(RUST_PROFILE)/libaurora.a'
       configs:
         Debug:
           GCC_OPTIMIZATION_LEVEL: '0'
@@ -105,7 +105,7 @@ targets:
           set -euo pipefail
           # Xcode scripts don't inherit the login shell PATH
           export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
-          cd "${PROJECT_DIR}/.."
+          cd "${PROJECT_DIR}/../.."
 
           [ "${CONFIGURATION}" = "Release" ] && CARGO_FLAGS="--release" || CARGO_FLAGS=""
 
@@ -117,7 +117,7 @@ targets:
               iphonesimulator/x86_64) triple=x86_64-apple-ios ;;
               *) echo "unsupported ${PLATFORM_NAME}/${arch}"; exit 1 ;;
             esac
-            cargo build --lib --target "${triple}" ${CARGO_FLAGS}
+            cargo build -p aurora_mobile --lib --target "${triple}" ${CARGO_FLAGS}
           done
         shell: /bin/bash
         basedOnDependencyAnalysis: false

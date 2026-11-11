@@ -32,7 +32,7 @@
       {
         packages = rec {
           default = aurora;
-          aurora = pkgs.callPackage ./packaging/package.nix { };
+          aurora = pkgs.callPackage ./platform/packaging/package.nix { };
         };
       }
     );

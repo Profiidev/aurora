@@ -15,7 +15,7 @@ plugins {
 }
 
 // Single source of truth for the version: the root Cargo.toml.
-val cargoVersion = rootProject.file("../Cargo.toml").readLines()
+val cargoVersion = rootProject.file("../../Cargo.toml").readLines()
     .first { it.startsWith("version = ") }.substringAfter('"').substringBefore('"')
 val (vMajor, vMinor, vPatch) = cargoVersion.split(".").map { it.toInt() }
 

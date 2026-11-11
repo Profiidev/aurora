@@ -43,12 +43,12 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-            android/.gradle
+            platform/android/.gradle
 
       - name: setup Android signing
         if: github.event_name != 'pull_request'
         run: |
-          cd android
+          cd platform/android
           echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" > keystore.properties
           echo "password=${{ secrets.ANDROID_KEY_PASSWORD }}" >> keystore.properties
           base64 -d <<< "${{ secrets.ANDROID_KEY_BASE64 }}" > $RUNNER_TEMP/keystore.jks
@@ -64,8 +64,8 @@ jobs:
         run: |
           mkdir -p dist
           name="${GITHUB_REPOSITORY#*/}_${{ github.event.release.tag_name || 'pr' }}"
-          cp android/app/build/outputs/apk/release/*.apk "dist/$name.apk"
-          cp android/app/build/outputs/bundle/release/*.aab "dist/$name.aab"
+          cp platform/android/app/build/outputs/apk/release/*.apk "dist/$name.apk"
+          cp platform/android/app/build/outputs/bundle/release/*.aab "dist/$name.aab"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: github.event_name == 'pull_request'
