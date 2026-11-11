@@ -19,6 +19,8 @@ async fn main() -> Result<()> {
     error!("aurorad is already running");
     std::process::exit(1);
   };
+  let socket = ipc::util::socket_path();
+  let socket_id = socket_inode(&socket);
 
   let loaded = match config::read() {
     Ok(loaded) => loaded,
@@ -52,9 +54,17 @@ async fn main() -> Result<()> {
     () = shutdown_signal() => info!("shutting down"),
   }
   engine.shutdown().await;
-  // the listener does not unlink its socket on drop
-  let _ = std::fs::remove_file(ipc::util::socket_path());
+  // the listener does not unlink its socket on drop; leave one a newer
+  // instance bound meanwhile
+  if socket_id.is_some() && socket_inode(&socket) == socket_id {
+    let _ = std::fs::remove_file(&socket);
+  }
   Ok(())
+}
+
+fn socket_inode(path: &std::path::Path) -> Option<u64> {
+  use std::os::unix::fs::MetadataExt;
+  std::fs::metadata(path).ok().map(|m| m.ino())
 }
 
 /// Resolves on SIGINT (Ctrl+C) or SIGTERM (systemd stop)
