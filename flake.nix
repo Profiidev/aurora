@@ -18,11 +18,12 @@
 
   outputs =
     {
+      self,
       nixpkgs,
       flake-utils,
       ...
     }:
-    flake-utils.lib.eachDefaultSystem (
+    (flake-utils.lib.eachDefaultSystem (
       system:
       let
         pkgs = import nixpkgs {
@@ -32,8 +33,12 @@
       {
         packages = rec {
           default = aurora;
-          aurora = pkgs.callPackage ./platform/packaging/package.nix { };
+          aurora = pkgs.callPackage ./nix/package.nix { };
         };
       }
-    );
+    ))
+    // {
+      nixosModules.default = import ./nix/nixos-module.nix self;
+      homeModules.default = import ./nix/home-module.nix self;
+    };
 }

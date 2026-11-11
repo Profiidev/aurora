@@ -21,12 +21,12 @@ in
 
 rustPlatform.buildRustPackage {
   pname = "aurora";
-  version = (lib.importTOML ../../Cargo.toml).package.version;
+  version = (lib.importTOML ../Cargo.toml).workspace.package.version;
 
-  src = ./../..;
+  src = ./..;
 
   cargoLock = {
-    lockFile = ../../Cargo.lock;
+    lockFile = ../Cargo.lock;
     # gpui-mobile is only used on Android/iOS, but the lockfile still vendors it
     outputHashes = {
       "gpui-pre-mobile-0.1.0" = "sha256-PWxp1t8Q6cZ0TQKxaS67zS2hNFyJcsmWbgnJjcPzZQM=";
@@ -65,8 +65,6 @@ rustPlatform.buildRustPackage {
       --replace-fail "{{icon}}" "aurora" \
       --replace-fail "{{name}}" "Aurora"
     sed -i '/{{/d' $out/share/applications/aurora.desktop
-    install -Dm644 platform/packaging/aurorad.service $out/lib/systemd/user/aurorad.service
-    substituteInPlace $out/lib/systemd/user/aurorad.service --replace-fail "@bin@" "$out/bin/aurorad"
   '';
 
   postFixup = ''
@@ -76,7 +74,8 @@ rustPlatform.buildRustPackage {
   meta = {
     description = "Aurora";
     homepage = "https://github.com/Profiidev/aurora";
-    license = lib.licenses.mit;
+    license = lib.licenses.gpl2;
+    maintainers = with lib.maintainers; [ profidev ];
     platforms = lib.platforms.linux;
     mainProgram = "aurora";
   };
