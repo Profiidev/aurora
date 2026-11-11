@@ -5,3 +5,10 @@
 pub trait Transport {
   fn name(&self) -> &'static str;
 }
+
+#[cfg(feature = "iroh")]
+mod iroh_node;
+#[cfg(feature = "iroh")]
+pub use iroh_node::{
+  Connection, Node, RecvStream, SendStream, load_or_create_key, random_bytes, remote_id,
+};
