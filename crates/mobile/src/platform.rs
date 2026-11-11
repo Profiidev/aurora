@@ -38,7 +38,6 @@ pub fn is_android_emulator() -> bool {
   }
 }
 
-
 /// Selects the OpenGL ES backend when running on an Android emulator to avoid ranchu Vulkan driver bugs.
 #[cfg(target_os = "android")]
 pub fn configure_android_gpu() {
@@ -50,4 +49,3 @@ pub fn configure_android_gpu() {
     set_gpu_backend(GpuBackend::Gl);
   }
 }
-
