@@ -9,7 +9,7 @@ use tokio::sync::{broadcast::error::RecvError, mpsc};
 use super::{IpcCommand, IpcRegistry, IpcStream};
 use crate::{
   engine::Engine,
-  types::{DeviceStatus, Event, Nearby, PairInfo, PairState},
+  types::{AppSettings, DeviceStatus, Event, Nearby, PairInfo, PairState},
 };
 
 macro_rules! command {
@@ -40,6 +40,21 @@ command!(PairStatus, "pair:status", () => PairState, |_p, e| Ok(e.pair_state()))
 command!(PairNearby, "pair:nearby", () => Vec<Nearby>, |_p, e| e.scan().await);
 command!(DevicesList, "devices:list", () => Vec<DeviceStatus>, |_p, e| Ok(e.devices()));
 command!(DevicesUnpair, "devices:unpair", String => (), |p, e| e.unpair(&p).await);
+
+command!(SettingsGet, "settings:get", () => AppSettings, |_p, e| {
+  let s = e.settings();
+  Ok(AppSettings {
+    name: s.name,
+    discovery: s.discovery,
+  })
+});
+command!(SettingsSetDiscovery, "settings:set_discovery", bool => (), |p, e| {
+  crate::config::set_discovery(p)?;
+  let mut s = e.settings();
+  s.discovery = p;
+  e.set_settings(s);
+  Ok(())
+});
 
 /// Every [`Event`] of the engine until the client closes
 pub struct Events;
@@ -80,5 +95,7 @@ pub fn register_all(registry: &mut IpcRegistry) {
     .register::<PairNearby>()
     .register::<DevicesList>()
     .register::<DevicesUnpair>()
+    .register::<SettingsGet>()
+    .register::<SettingsSetDiscovery>()
     .register_stream::<Events>();
 }

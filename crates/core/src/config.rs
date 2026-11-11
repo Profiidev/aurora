@@ -97,6 +97,31 @@ pub fn state_dir() -> PathBuf {
     .join("aurora")
 }
 
+/// Edits `settings.toml` in the state dir, the file the app itself writes so
+/// the user's own files stay untouched
+pub fn update_state(edit: impl FnOnce(&mut toml::Table)) -> Result<()> {
+  let path = state_dir().join("settings.toml");
+  let mut table = match std::fs::read_to_string(&path) {
+    Ok(text) => toml::from_str(&text).with_context(|| format!("{}", path.display()))?,
+    Err(e) if e.kind() == std::io::ErrorKind::NotFound => toml::Table::new(),
+    Err(e) => return Err(e.into()),
+  };
+  edit(&mut table);
+  std::fs::create_dir_all(state_dir())?;
+  crate::store::write_atomic(&path, toml::to_string_pretty(&table)?.as_bytes())
+}
+
+pub fn set_discovery(enabled: bool) -> Result<()> {
+  update_state(|table| {
+    let pairing = table
+      .entry("pairing")
+      .or_insert_with(|| toml::Value::Table(Default::default()));
+    if let Some(pairing) = pairing.as_table_mut() {
+      pairing.insert("discovery".into(), enabled.into());
+    }
+  })
+}
+
 pub struct Loaded {
   pub config: Config,
   /// Keys no section knows, likely typos

@@ -459,6 +459,12 @@ impl Engine {
         Some(a) => format!("Local network · {}", a.ip()),
         None => "Local network".into(),
       },
+      fingerprint: hex(&peer.id[..8])
+        .as_bytes()
+        .chunks(4)
+        .map(|c| String::from_utf8_lossy(c))
+        .collect::<Vec<_>>()
+        .join(" "),
       local_accepted: false,
     };
     {
@@ -834,6 +840,19 @@ impl Engine {
     let beacon = postcard_from(&buf[..len])?;
     let addr = SocketAddr::new(from.ip(), beacon.port);
     Ok((to, beacon, addr))
+  }
+
+  /// Ends the session, tells peers we are going and closes the endpoint so iroh
+  /// does not abort on drop
+  pub async fn shutdown(&self) {
+    self.cancel_pairing();
+    let conns: Vec<_> = (self.live.lock().unwrap().drain())
+      .map(|(_, l)| l.conn)
+      .collect();
+    for conn in conns {
+      conn.close(0u32.into(), b"shutdown");
+    }
+    self.node.close().await;
   }
 
   pub fn id(&self) -> Id {

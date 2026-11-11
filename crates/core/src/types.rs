@@ -37,6 +37,8 @@ pub struct Confirm {
   pub peer_name: String,
   pub peer_os: String,
   pub via: String,
+  /// First bytes of the peer's endpoint id, grouped for reading aloud
+  pub fingerprint: String,
   pub local_accepted: bool,
 }
 
@@ -70,4 +72,11 @@ pub enum Event {
   DeviceDisconnected(String),
   Unpaired(String),
   ConfigChanged,
+}
+
+/// What the settings screens read and change
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AppSettings {
+  pub name: String,
+  pub discovery: bool,
 }
