@@ -13,7 +13,7 @@ pub fn set(on: bool) -> Result<(), String> {
         &cls,
         jni::jni_str!("set"),
         jni::jni_sig!("(Landroid/app/Activity;Z)V"),
-        &[JValue::Object(&activity), JValue::Bool(on.into())],
+        &[JValue::Object(&activity), JValue::Bool(on)],
       )
       .map(|_| ())
       .map_err(|e| {
