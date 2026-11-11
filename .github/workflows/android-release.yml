@@ -1,0 +1,81 @@
+name: 'Android Build and Release'
+
+on:
+  pull_request:
+  release:
+    types:
+      - published
+
+jobs:
+  release-android:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk,just
+
+      - name: Cache cargo and rust files
+        id: rust_cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          cache-on-failure: true
+          shared-key: 'app_release_android_cache'
+
+      - name: Cache gradle files
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          key: app_release_gradle_cache
+          restore-keys: app_release_gradle_cache
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            android/.gradle
+
+      - name: setup Android signing
+        if: github.event_name != 'pull_request'
+        run: |
+          cd android
+          echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" > keystore.properties
+          echo "password=${{ secrets.ANDROID_KEY_PASSWORD }}" >> keystore.properties
+          base64 -d <<< "${{ secrets.ANDROID_KEY_BASE64 }}" > $RUNNER_TEMP/keystore.jks
+          echo "storeFile=$RUNNER_TEMP/keystore.jks" >> keystore.properties
+
+      # the runner image ships an NDK at ANDROID_NDK_LATEST_HOME
+      - name: Build app
+        env:
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_NDK_LATEST_HOME }}
+        run: just android-release
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p dist
+          name="${GITHUB_REPOSITORY#*/}_${{ github.event.release.tag_name || 'pr' }}"
+          cp android/app/build/outputs/apk/release/*.apk "dist/$name.apk"
+          cp android/app/build/outputs/bundle/release/*.aab "dist/$name.aab"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: github.event_name == 'pull_request'
+        with:
+          name: android
+          path: dist/
+
+      - name: Upload to the release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" dist/* --clobber

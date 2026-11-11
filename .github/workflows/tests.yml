@@ -1,0 +1,48 @@
+name: Tests
+on:
+  pull_request:
+
+jobs:
+  build_and_test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+
+      - name: refresh apt index (ubuntu only)
+        run: sudo apt-get update
+
+      # gpui on Linux, and lavapipe so gpui tests find a (software) Vulkan adapter
+      - uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # latest
+        with:
+          packages: pkg-config libfontconfig1-dev libfreetype-dev libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libwayland-dev libvulkan1 mesa-vulkan-drivers
+          version: 1.0
+
+      - name: Cache cargo and rust files
+        id: rust_cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          cache-on-failure: true
+          shared-key: "test_cache"
+
+      - uses: taiki-e/install-action@badb8c3638e0b773c6c17a6025c2306a8f1c4303 # nextest
+      - name: "Build and test"
+        run: cargo nextest run --workspace --all-features
+
+      # Published by tests-publish.yml, which also works for PRs from forks
+      - name: Upload Test Result File
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: test-results
+          path: ${{ github.workspace }}/target/nextest/default/junit.xml
+          retention-days: 5
+
+      - name: Upload Event File
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: event-file
+          path: ${{ github.event_path }}
+          retention-days: 5

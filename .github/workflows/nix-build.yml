@@ -1,0 +1,49 @@
+name: Cache App
+
+on:
+  pull_request:
+  release:
+    types:
+      - published
+
+jobs:
+  cache-app:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+      - name: Install Hibernation CLI
+        uses: profiidev/hibernation@3db123f1f3b58131f7df8d75927a8a095d8dc33c # v0
+        if: github.event_name != 'pull_request'
+        with:
+          url: ${{ secrets.HIBERNATION_URL }}
+          token: ${{ secrets.HIBERNATION_TOKEN }}
+          signing-key: ${{ secrets.HIBERNATION_SIGNING_KEY }}
+
+      - name: Run build
+        run: nix build . -Lv --print-out-paths --accept-flake-config
+
+      - name: Cache results
+        if: github.event_name != 'pull_request'
+        run: hibernation push projects $(readlink result)
+
+  flake:
+    name: Check flake
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Run flake check
+        run: nix flake check

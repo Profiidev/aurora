@@ -1,0 +1,6 @@
+{
+  "ignorePatterns": [".github/**/*"],
+  "printWidth": 80,
+  "singleQuote": true,
+  "trailingComma": "none"
+}

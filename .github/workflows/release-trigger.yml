@@ -1,0 +1,49 @@
+name: Release Version
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version'
+        required: true
+        default: 'v0.0.0'
+
+jobs:
+  update-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        id: app-token
+        with:
+          client-id: ${{ secrets.COMMIT_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.COMMIT_BOT_PRIVATE_KEY }}
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+
+      - name: Update version
+        id: update_version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          RAW_TAG=$INPUT_VERSION
+          NEW_VERSION="${RAW_TAG#v}"
+          echo "Bumping version to $NEW_VERSION"
+          # Android reads its versionName/versionCode from Cargo.toml
+          sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" Cargo.toml
+          cargo metadata -q > /dev/null
+          IFS=. read -r MAJOR MINOR PATCH <<< "$NEW_VERSION"
+          sed -i "s/MARKETING_VERSION: \".*\"/MARKETING_VERSION: \"$NEW_VERSION\"/" ios/project.yml
+          sed -i "s/CURRENT_PROJECT_VERSION: \".*\"/CURRENT_PROJECT_VERSION: \"$((MAJOR * 10000 + MINOR * 100 + PATCH))\"/" ios/project.yml
+
+      - name: Create PR
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          commit-message: 'Updated version to ${{ github.event.inputs.version }}'
+          branch: chore/release-version-${{ github.event.inputs.version }}
+          title: 'Release version ${{ github.event.inputs.version }}'
+          body: 'This PR releases the version ${{ github.event.inputs.version }}.'
+          base: main
+          sign-commits: true
+          labels: release-version
