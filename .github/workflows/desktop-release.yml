@@ -10,7 +10,7 @@ jobs:
   release-desktop:
     permissions:
       contents: write
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-26.04
     env:
       OUT_DIR: target/release
     steps:
