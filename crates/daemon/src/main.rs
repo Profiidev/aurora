@@ -2,7 +2,7 @@ use anyhow::Result;
 use aurora_core::{
   config,
   engine::Engine,
-  ipc::{IpcRegistry, IpcServer, commands},
+  ipc::{self, IpcRegistry, IpcServer, commands},
 };
 use tracing::{error, info};
 
@@ -48,8 +48,27 @@ async fn main() -> Result<()> {
   commands::register_all(&mut registry);
   info!("aurorad started");
   tokio::select! {
-    () = server.run(registry, engine) => {}
-    _ = tokio::signal::ctrl_c() => {}
+    () = server.run(registry, engine.clone()) => {}
+    () = shutdown_signal() => info!("shutting down"),
   }
+  engine.shutdown().await;
+  // the listener does not unlink its socket on drop
+  let _ = std::fs::remove_file(ipc::util::socket_path());
   Ok(())
+}
+
+/// Resolves on SIGINT (Ctrl+C) or SIGTERM (systemd stop)
+async fn shutdown_signal() {
+  use tokio::signal::unix::{SignalKind, signal};
+  let (Ok(mut term), Ok(mut int)) = (
+    signal(SignalKind::terminate()),
+    signal(SignalKind::interrupt()),
+  ) else {
+    // no handlers: stay up until killed
+    return std::future::pending().await;
+  };
+  tokio::select! {
+    _ = term.recv() => {}
+    _ = int.recv() => {}
+  }
 }
