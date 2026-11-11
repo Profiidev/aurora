@@ -35,7 +35,8 @@ aurora_viewer = { path = "crates/viewer" }
 # GPUI ecosystem
 gpui = { package = "gpui-pre", version = "=0.3.10", default-features = false }
 gpui-kit = { version = "0.8.1", default-features = false, features = [
-  "component"
+  "component",
+  "assets"
 ] }
 # Plugin features: url_launcher, shared_preferences, path_provider, package_info,
 # device_info, connectivity, network_info, vibration, battery, share, sensors,

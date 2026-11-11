@@ -28,18 +28,10 @@ pub enum Page {
   Settings,
 }
 
-#[derive(Clone, Copy, PartialEq)]
-pub enum SettingsTab {
-  Connection,
-  Features,
-  Device,
-}
-
 pub struct AppView {
   pub(crate) backend: Arc<dyn Backend>,
   pub(crate) platform: Platform,
   pub(crate) page: Page,
-  pub(crate) settings_tab: SettingsTab,
   pub(crate) devices: Vec<DeviceStatus>,
   pub(crate) selected: Option<String>,
   pub(crate) pair: PairState,
@@ -53,7 +45,13 @@ pub struct AppView {
   pub(crate) offline: bool,
   pub(crate) settings: Option<AppSettings>,
   pub(crate) address: Entity<InputState>,
+  /// Relay server field of the settings, not wired up yet
+  pub(crate) relay: Entity<InputState>,
   pub(crate) otp: Entity<OtpState>,
+  /// Mobile: the address field behind "Connect by address or USB"
+  pub(crate) show_address: bool,
+  /// The first device list decides where the app opens
+  loaded: bool,
   tick: u64,
 }
 
@@ -64,7 +62,12 @@ impl AppView {
     window: &mut Window,
     cx: &mut Context<Self>,
   ) -> Self {
-    let address = cx.new(|cx| InputState::new(window, cx).placeholder("192.168.1.42"));
+    let placeholder = match platform {
+      Platform::Desktop => "192.168.1.42 or node ID",
+      Platform::Mobile => "192.168.1.10",
+    };
+    let address = cx.new(|cx| InputState::new(window, cx).placeholder(placeholder));
+    let relay = cx.new(|cx| InputState::new(window, cx).placeholder("https://relay.example.com"));
     let otp = cx.new(|cx| OtpState::new(6, window, cx));
 
     // events arrive on a blocking iterator; hand them to the UI thread
@@ -104,7 +107,6 @@ impl AppView {
       backend,
       platform,
       page: Page::Home,
-      settings_tab: SettingsTab::Connection,
       devices: Vec::new(),
       selected: None,
       pair: PairState::Idle,
@@ -115,10 +117,23 @@ impl AppView {
       offline: false,
       settings: None,
       address,
+      relay,
       otp,
+      show_address: false,
+      loaded: false,
       tick: 0,
     };
     this.refresh(cx);
+    // debug builds: open a page directly, for screenshots without input devices
+    #[cfg(debug_assertions)]
+    if let Ok(page) = std::env::var("AURORA_PAGE") {
+      this.loaded = true;
+      match page.as_str() {
+        "pair" => this.go(Page::Pair, cx),
+        "settings" => this.go(Page::Settings, cx),
+        _ => {}
+      }
+    }
     this
   }
 
@@ -159,6 +174,12 @@ impl AppView {
           .any(|d| Some(&d.device.id) == this.selected.as_ref());
         if !known {
           this.selected = this.devices.first().map(|d| d.device.id.clone());
+        }
+        // nothing paired: open on pairing, like a first run
+        let first = !this.loaded && !this.offline;
+        this.loaded |= first;
+        if this.devices.is_empty() && !this.offline && (first || this.page == Page::Home) {
+          this.go(Page::Pair, cx);
         }
         cx.notify();
       },
@@ -221,10 +242,16 @@ impl AppView {
   pub(crate) fn open_pair(&mut self, cx: &mut Context<Self>) {
     self.bg(
       cx,
-      |b| b.start_pairing(),
-      |this, res, cx| {
-        // an error means a session is already running, e.g. while a code is confirmed
-        if let Ok(info) = res {
+      // a session that is already waiting (another window, a restart) is shown as is
+      |b| match b.start_pairing() {
+        Ok(info) => Some(info),
+        Err(_) => match b.pair_state() {
+          Ok(PairState::Waiting(info)) => Some(info),
+          _ => None,
+        },
+      },
+      |this, info, cx| {
+        if let Some(info) = info {
           let end = Instant::now() + Duration::from_secs(info.expires_in);
           this.info = Some((info, end));
         }

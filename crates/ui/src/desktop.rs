@@ -1,30 +1,38 @@
+//! Desktop screens, following the design boards "Desktop · Pair new device",
+//! "Desktop · Confirm pairing code", "Desktop · Device overview" and
+//! "Desktop · Settings".
+
 use std::time::Instant;
 
 use aurora_core::types::{Confirm, PairState};
 use gpui::{
-  Context, Div, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled,
-  div, px,
+  AnyElement, ClickEvent, Context, Div, InteractiveElement, IntoElement, ParentElement,
+  SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px,
 };
-use gpui_kit::component::{
-  ActiveTheme, Disableable, Sizable, StyledExt,
-  button::{Button, ButtonVariants},
-  group_box::GroupBox,
-  h_flex,
-  input::{Input, OtpInput},
-  progress::Progress,
-  separator::Separator,
-  sidebar::{Sidebar, SidebarFooter, SidebarGroup, SidebarHeader, SidebarMenu, SidebarMenuItem},
-  spinner::Spinner,
-  switch::Switch,
-  v_flex,
+use gpui_kit::{
+  assets::IconName,
+  component::{
+    ActiveTheme, Disableable, Sizable, StyledExt,
+    button::{Button, ButtonVariants},
+    h_flex,
+    input::{Input, OtpInput},
+    progress::Progress,
+    separator::Separator,
+    spinner::Spinner,
+    switch::Switch,
+    v_flex,
+  },
 };
 
 use crate::{
-  app::{AppView, Page, SettingsTab},
-  widgets::{card, chip, confirm_details, error_line, muted, qr, soon},
+  app::{AppView, Page},
+  widgets::{
+    ItemVariant, badge, card, card_content, card_header, confirm_details, error_line, field_row,
+    field_set, heading, icon, item, muted, online_color, qr,
+  },
 };
 
-/// What the device overview lists; none of these are built yet
+/// Sidebar entries under the selected device; only Overview exists so far
 const FEATURES: [&str; 8] = [
   "Notifications",
   "Messages",
@@ -36,18 +44,39 @@ const FEATURES: [&str; 8] = [
   "Commands",
 ];
 
+/// Per device feature switches of the settings page
+const FEATURE_SETTINGS: [(&str, &str); 6] = [
+  ("Notifications", "Show phone notifications here."),
+  ("Clipboard", "Share copied text and files both ways."),
+  ("Files", "Send and receive files."),
+  ("Media control", "Control players on either device."),
+  ("Screen mirroring", "View and control the phone screen."),
+  ("Run commands", "Let the phone run commands you define."),
+];
+
+const SETTINGS_SECTIONS: [&str; 6] = [
+  "Connection",
+  "Devices",
+  "Files",
+  "Screen and camera",
+  "Commands",
+  "About",
+];
+
+type OnClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static>;
+
 impl AppView {
   pub(crate) fn desktop(&mut self, cx: &mut Context<Self>) -> Div {
-    // a code to confirm replaces the whole window content, like the design
+    // a code to confirm takes over the window
     if let PairState::Confirm(c) = self.pair.clone() {
       return self.desktop_confirm(&c, cx);
     }
-    let main = match self.page {
-      Page::Home => self.desktop_overview(cx),
-      Page::Pair => self.desktop_pair(cx),
-      Page::Settings => self.desktop_settings(cx),
+    let (nav, main) = match self.page {
+      Page::Home => (self.sidebar(cx), self.desktop_overview(cx)),
+      Page::Pair => (self.sidebar(cx), self.desktop_pair(cx)),
+      Page::Settings => (self.settings_nav(cx), self.desktop_settings(cx)),
     };
-    h_flex().child(self.sidebar(cx)).child(
+    h_flex().items_start().child(nav).child(
       div()
         .id("main")
         .flex_1()
@@ -58,103 +87,362 @@ impl AppView {
     )
   }
 
-  fn sidebar(&mut self, cx: &mut Context<Self>) -> Sidebar<SidebarGroup<SidebarMenu>> {
-    let online = gpui::hsla(0.4, 0.6, 0.5, 1.0);
-    let mut devices = SidebarMenu::new();
-    for d in &self.devices {
+  /// One sidebar row: icon, label, optional trailing element
+  #[allow(clippy::too_many_arguments)]
+  fn nav_row(
+    &self,
+    cx: &Context<Self>,
+    id: impl Into<SharedString>,
+    leading: Option<IconName>,
+    label: impl Into<SharedString>,
+    active: bool,
+    dimmed: bool,
+    trailing: Option<AnyElement>,
+    on_click: Option<OnClick>,
+  ) -> AnyElement {
+    let theme = cx.theme();
+    let enabled = on_click.is_some();
+    h_flex()
+      .id(id.into())
+      .items_center()
+      .gap_2p5()
+      .p_2()
+      .rounded_lg()
+      .text_sm()
+      .when(active, |r| r.bg(theme.sidebar_accent))
+      .when(dimmed && !active, |r| r.text_color(theme.muted_foreground))
+      .when(enabled && !active, |r| {
+        r.hover(|s| s.bg(theme.sidebar_accent)).cursor_pointer()
+      })
+      .children(leading.map(|i| icon(i).small()))
+      .child(div().flex_1().child(label.into()))
+      .children(trailing)
+      .when_some(on_click, |r, f| r.on_click(f))
+      .into_any_element()
+  }
+
+  fn nav_label(&self, cx: &Context<Self>, text: impl Into<SharedString>, top: f32) -> Div {
+    div()
+      .text_xs()
+      .text_color(cx.theme().muted_foreground)
+      .px_2()
+      .pt(px(top))
+      .pb_1()
+      .child(text.into())
+  }
+
+  fn nav_shell(&self, cx: &Context<Self>) -> Div {
+    v_flex()
+      .w(px(240.))
+      .flex_none()
+      .h_full()
+      .py_4()
+      .px_3()
+      .gap_0p5()
+      .bg(cx.theme().sidebar)
+      .border_r_1()
+      .border_color(cx.theme().sidebar_border)
+  }
+
+  fn sidebar(&mut self, cx: &mut Context<Self>) -> Div {
+    let mut nav = self.nav_shell(cx).child(
+      h_flex()
+        .items_center()
+        .gap_2()
+        .px_2()
+        .pt_1()
+        .pb_4()
+        .child(icon(IconName::MonitorSmartphone))
+        .child(div().text_size(px(15.)).font_semibold().child("Aurora")),
+    );
+    nav = nav.child(self.nav_label(cx, "Devices", 8.));
+    for d in self.devices.clone() {
       let id = d.device.id.clone();
       let active = self.page == Page::Home && self.selected.as_ref() == Some(&id);
-      let connected = d.connected;
-      let muted = cx.theme().muted_foreground;
-      devices = devices.child(
-        SidebarMenuItem::new(d.device.name.clone())
-          .active(active)
-          .suffix(move |_, _| {
-            div()
-              .size_2()
-              .rounded_full()
-              .bg(if connected { online } else { muted })
-          })
-          .on_click(cx.listener(move |this, _, _, cx| {
-            this.selected = Some(id.clone());
-            this.go(Page::Home, cx);
-          })),
-      );
+      let dot = div()
+        .size_2()
+        .rounded_full()
+        .bg(if d.connected {
+          online_color()
+        } else {
+          cx.theme().muted_foreground
+        })
+        .into_any_element();
+      nav = nav.child(self.nav_row(
+        cx,
+        format!("dev-{id}"),
+        Some(IconName::Smartphone),
+        d.device.name.clone(),
+        active,
+        false,
+        Some(dot),
+        Some(Box::new(cx.listener(move |this, _, _, cx| {
+          this.selected = Some(id.clone());
+          this.go(Page::Home, cx);
+        }))),
+      ));
     }
-    devices = devices.child(
-      SidebarMenuItem::new("Pair new device")
-        .active(self.page == Page::Pair)
-        .on_click(cx.listener(|this, _, _, cx| this.go(Page::Pair, cx))),
-    );
+    nav = nav.child(self.nav_row(
+      cx,
+      "pair-new",
+      Some(IconName::Plus),
+      "Pair new device",
+      self.page == Page::Pair,
+      true,
+      None,
+      Some(Box::new(
+        cx.listener(|this, _, _, cx| this.go(Page::Pair, cx)),
+      )),
+    ));
 
-    let mut sidebar = Sidebar::new("sidebar")
-      .header(SidebarHeader::new().child(div().font_semibold().child("Aurora")))
-      .child(SidebarGroup::new("Devices").child(devices));
-    if let Some(device) = self.selected_device() {
-      let features = std::iter::once(
-        SidebarMenuItem::new("Overview")
-          .active(self.page == Page::Home)
-          .on_click(cx.listener(|this, _, _, cx| this.go(Page::Home, cx))),
-      )
-      .chain(
-        FEATURES
-          .iter()
-          .map(|f| SidebarMenuItem::new(*f).disable(true)),
-      );
-      sidebar = sidebar.child(
-        SidebarGroup::new(device.device.name.clone()).child(SidebarMenu::new().children(features)),
-      );
+    if self.page == Page::Home
+      && let Some(d) = self.selected_device().cloned()
+    {
+      nav = nav.child(self.nav_label(cx, d.device.name.clone(), 16.));
+      nav = nav.child(self.nav_row(cx, "f-overview", None, "Overview", false, false, None, None));
+      for f in FEATURES {
+        nav = nav.child(self.nav_row(cx, format!("f-{f}"), None, f, false, true, None, None));
+      }
     }
-    let settings = Button::new("settings").label("Settings");
-    let settings = if self.page == Page::Settings {
-      settings.secondary()
-    } else {
-      settings.ghost()
+
+    nav.child(div().flex_1()).child(self.nav_row(
+      cx,
+      "settings",
+      Some(IconName::Settings),
+      "Settings",
+      false,
+      false,
+      None,
+      Some(Box::new(
+        cx.listener(|this, _, _, cx| this.go(Page::Settings, cx)),
+      )),
+    ))
+  }
+
+  // ---- pair a new device ---------------------------------------------------------
+
+  fn desktop_pair(&mut self, cx: &mut Context<Self>) -> Div {
+    let scan = {
+      let body = match &self.info {
+        Some((info, end)) => {
+          let left = end.saturating_duration_since(Instant::now()).as_secs_f32();
+          let pct = (left / info.expires_in.max(1) as f32 * 100.0).clamp(0.0, 100.0);
+          v_flex()
+            .items_center()
+            .gap_4()
+            .child(qr(&info.link, 200.0))
+            .child(Progress::new("countdown").value(pct).w(px(200.)))
+        }
+        None => v_flex()
+          .items_center()
+          .justify_center()
+          .h(px(200.))
+          .child(Spinner::new()),
+      };
+      card(cx, false)
+        .flex_1()
+        .min_w(px(320.))
+        .child(card_header(
+          cx,
+          false,
+          "Scan with your phone",
+          Some(
+            "The code holds this computer's key and address. It refreshes every 60 seconds.".into(),
+          ),
+          None,
+        ))
+        .child(card_content(false).child(body))
     };
-    sidebar.footer(
-      SidebarFooter::new()
-        .child(settings.on_click(cx.listener(|this, _, _, cx| this.go(Page::Settings, cx)))),
-    )
-  }
 
-  fn heading(&self, cx: &Context<Self>, title: &str, subtitle: Option<&str>) -> Div {
+    let nearby = {
+      let action = if self.scanning {
+        Spinner::new().into_any_element()
+      } else {
+        Button::new("rescan")
+          .ghost()
+          .small()
+          .icon(IconName::RefreshCw)
+          .on_click(cx.listener(|this, _, _, cx| this.scan(cx)))
+          .into_any_element()
+      };
+      let mut list = v_flex().gap_4();
+      if self.nearby.is_empty() {
+        list = list.child(muted(cx, "No phones found yet."));
+      }
+      for (i, n) in self.nearby.clone().into_iter().enumerate() {
+        let link = n.link.clone();
+        list = list.child(item(
+          cx,
+          ItemVariant::Outline,
+          true,
+          Some(icon(IconName::Smartphone).small().into_any_element()),
+          n.name.clone(),
+          Some(format!("{} · {}", n.os, n.addr.ip()).into()),
+          Some(
+            Button::new(("nearby", i))
+              .secondary()
+              .small()
+              .label("Pair")
+              .on_click(cx.listener(move |this, _, _, cx| this.connect(link.clone(), cx)))
+              .into_any_element(),
+          ),
+        ));
+      }
+      card(cx, false)
+        .child(card_header(
+          cx,
+          false,
+          "Nearby phones",
+          Some("Found on this network.".into()),
+          Some(action),
+        ))
+        .child(card_content(false).child(list))
+    };
+
+    let address = card(cx, false)
+      .child(card_header(
+        cx,
+        false,
+        "Connect by address",
+        Some("For phones on another network, a VPN or a USB cable.".into()),
+        None,
+      ))
+      .child(
+        card_content(false).child(
+          h_flex()
+            .gap_2()
+            .items_end()
+            .child(
+              v_flex()
+                .flex_1()
+                .gap_2()
+                .child(div().text_sm().font_medium().child("Address or device ID"))
+                .child(Input::new(&self.address)),
+            )
+            .child(
+              Button::new("by-address")
+                .outline()
+                .label("Connect")
+                .on_click(cx.listener(|this, _, _, cx| {
+                  let host = this.address.read(cx).value().to_string();
+                  if !host.trim().is_empty() {
+                    this.connect(host, cx);
+                  }
+                })),
+            ),
+        ),
+      );
+
     v_flex()
-      .gap_1()
-      .child(div().text_2xl().font_semibold().child(title.to_string()))
-      .children(subtitle.map(|s| muted(cx, s.to_string())))
+      .py_10()
+      .px_12()
+      .gap_6()
+      .child(heading(
+        cx,
+        "Pair a new device",
+        Some("Open the app on your phone, then scan the code or pick this computer from the list."),
+      ))
+      .children(error_line(cx, &self.error))
+      .child(
+        h_flex()
+          .items_start()
+          .gap_6()
+          .max_w(px(1040.))
+          .child(scan)
+          .child(
+            v_flex()
+              .flex_1()
+              .min_w(px(320.))
+              .gap_6()
+              .child(nearby)
+              .child(address),
+          ),
+      )
   }
 
-  // ---- device overview -------------------------------------------------------
+  // ---- confirm -------------------------------------------------------------------
+
+  fn desktop_confirm(&mut self, c: &Confirm, cx: &mut Context<Self>) -> Div {
+    let footer = h_flex()
+      .justify_end()
+      .gap_2()
+      .px_6()
+      .py_4()
+      .border_t_1()
+      .border_color(cx.theme().border)
+      .bg(cx.theme().muted.opacity(0.5))
+      .rounded_b_xl()
+      .map(|f| {
+        if c.local_accepted {
+          f.child(Spinner::new().small())
+            .child(muted(cx, "Waiting for your phone…"))
+        } else {
+          f.child(
+            Button::new("mismatch")
+              .outline()
+              .label("Codes don't match")
+              .on_click(cx.listener(|this, _, _, cx| this.decide(false, cx))),
+          )
+          .child(
+            Button::new("pair")
+              .primary()
+              .label("Pair")
+              .on_click(cx.listener(|this, _, _, cx| this.decide(true, cx))),
+          )
+        }
+      });
+    let confirm = card(cx, false)
+      .pb_0()
+      .w(px(480.))
+      .child(card_header(
+        cx,
+        false,
+        format!("Pair with {}?", c.peer_name),
+        Some("Check that your phone shows the same code. Pair only if they match.".into()),
+        None,
+      ))
+      .child(
+        card_content(false).child(
+          v_flex()
+            .items_center()
+            .gap_5()
+            .py_2()
+            .child(OtpInput::new(&self.otp).disabled(true))
+            .child(Separator::horizontal().w_full())
+            .child(confirm_details(cx, c, "Device", "Key fingerprint")),
+        ),
+      )
+      .child(footer);
+    div()
+      .flex()
+      .items_center()
+      .justify_center()
+      .py_10()
+      .px_6()
+      .child(confirm)
+  }
+
+  // ---- device overview -----------------------------------------------------------
 
   fn desktop_overview(&mut self, cx: &mut Context<Self>) -> Div {
-    let page = v_flex().p_8().gap_6();
+    let page = v_flex().py_8().px_10().gap_6();
     let Some(d) = self.selected_device().cloned() else {
-      return page
-        .child(self.heading(
-          cx,
-          if self.offline {
-            "aurorad is not running"
-          } else {
-            "No device paired yet"
-          },
-          Some(if self.offline {
-            "Start the daemon, then this window updates by itself."
-          } else {
-            "Choose Pair new device to connect your phone."
-          }),
-        ))
-        .child(
-          h_flex().child(
-            Button::new("pair-first")
-              .primary()
-              .label("Pair new device")
-              .disabled(self.offline)
-              .on_click(cx.listener(|this, _, _, cx| this.go(Page::Pair, cx))),
-          ),
-        );
+      return page.child(heading(
+        cx,
+        if self.offline {
+          "aurorad is not running"
+        } else {
+          "No device paired"
+        },
+        Some(if self.offline {
+          "Start the daemon, then this window updates by itself."
+        } else {
+          "Choose Pair new device to connect a phone."
+        }),
+      ));
     };
 
-    let mut tags = h_flex().flex_wrap().gap_2().child(chip(
+    let mut badges = h_flex().flex_wrap().gap_1p5().child(badge(
       if d.connected {
         "Connected · Local network"
       } else {
@@ -163,7 +451,7 @@ impl AppView {
       false,
     ));
     if let Some(b) = d.battery {
-      tags = tags.child(chip(
+      badges = badges.child(badge(
         format!(
           "Battery {b}%{}",
           if d.charging { " · Charging" } else { "" }
@@ -171,7 +459,6 @@ impl AppView {
         true,
       ));
     }
-
     let header = h_flex()
       .flex_wrap()
       .items_center()
@@ -179,14 +466,14 @@ impl AppView {
       .child(
         v_flex()
           .flex_1()
-          .gap_2()
+          .gap_1p5()
           .child(
             div()
               .text_2xl()
               .font_semibold()
               .child(d.device.name.clone()),
           )
-          .child(tags),
+          .child(badges),
       )
       .child(
         h_flex()
@@ -211,40 +498,118 @@ impl AppView {
           ),
       );
 
-    let cards = h_flex().flex_wrap().items_start().gap_4().children(
-      [
-        ("Notifications", None),
-        ("Transfers", Some("Saved to ~/Downloads/Aurora")),
-        ("Media", Some("Playing on phone")),
-        ("Live sessions", Some("Use the phone's hardware here")),
-      ]
-      .map(|(title, description)| {
-        card(cx, Some(title), description)
-          .w(px(280.))
-          .flex_1()
-          .min_w(px(240.))
-          .child(soon(cx))
-      }),
-    );
+    let soon = |cx: &Context<Self>| card_content(true).child(muted(cx, "Coming soon"));
+    let notifications = card(cx, true)
+      .flex_1()
+      .child(card_header(
+        cx,
+        true,
+        "Notifications",
+        None,
+        Some(
+          Button::new("all")
+            .ghost()
+            .xsmall()
+            .label("View all")
+            .disabled(true)
+            .into_any_element(),
+        ),
+      ))
+      .child(soon(cx));
+    let transfers = card(cx, true)
+      .flex_1()
+      .child(card_header(
+        cx,
+        true,
+        "Transfers",
+        Some("Saved to ~/Downloads/Aurora".into()),
+        None,
+      ))
+      .child(soon(cx));
+    let media = card(cx, true)
+      .flex_1()
+      .child(card_header(
+        cx,
+        true,
+        "Media",
+        Some("Playing on phone".into()),
+        None,
+      ))
+      .child(soon(cx));
+    let live = card(cx, true)
+      .flex_1()
+      .child(card_header(
+        cx,
+        true,
+        "Live sessions",
+        Some("Use the phone's hardware here".into()),
+        None,
+      ))
+      .child(
+        card_content(true).child(
+          h_flex()
+            .flex_wrap()
+            .gap_2()
+            .child(
+              Button::new("webcam")
+                .outline()
+                .small()
+                .label("Webcam")
+                .disabled(true),
+            )
+            .child(
+              Button::new("mic")
+                .outline()
+                .small()
+                .label("Microphone")
+                .disabled(true),
+            )
+            .child(
+              Button::new("display")
+                .outline()
+                .small()
+                .label("Second display")
+                .disabled(true),
+            ),
+        ),
+      );
 
-    let screen = card(cx, None, None)
-      .w(px(320.))
+    let screen = v_flex()
+      .w(px(300.))
+      .flex_none()
+      .p_4()
+      .gap_3()
+      .rounded(px(14.))
+      .border_1()
+      .border_color(cx.theme().border)
+      .bg(cx.theme().popover)
       .child(
         h_flex()
-          .gap_2()
           .items_center()
-          .child(div().flex_1().font_medium().child("Phone screen"))
-          .child(chip("Not available yet", false)),
+          .gap_2()
+          .child(div().flex_1().text_sm().font_medium().child("Phone screen"))
+          .child(badge("Not available", false))
+          .child(
+            Button::new("popout")
+              .ghost()
+              .small()
+              .icon(IconName::ExternalLink)
+              .disabled(true),
+          ),
       )
       .child(
         div()
+          .mx_auto()
           .w(px(220.))
           .h(px(476.))
-          .mx_auto()
-          .rounded_3xl()
-          .border_4()
-          .border_color(cx.theme().border)
-          .bg(cx.theme().background),
+          .rounded(px(22.))
+          .border(px(6.))
+          .border_color(cx.theme().muted)
+          .bg(gpui::black())
+          .flex()
+          .items_center()
+          .justify_center()
+          .child(muted(cx, "Coming soon")),
       )
       .child(h_flex().justify_center().gap_1().children(
         ["Back", "Home", "Recents"].map(|l| Button::new(l).ghost().small().label(l).disabled(true)),
@@ -252,317 +617,147 @@ impl AppView {
 
     page.child(header).child(
       h_flex()
-        .flex_wrap()
         .items_start()
         .gap_6()
-        .child(div().flex_1().min_w(px(380.)).child(cards))
+        .child(
+          v_flex()
+            .flex_1()
+            .min_w(px(380.))
+            .gap_4()
+            .child(
+              h_flex()
+                .items_stretch()
+                .gap_4()
+                .child(notifications)
+                .child(transfers),
+            )
+            .child(h_flex().items_stretch().gap_4().child(media).child(live)),
+        )
         .child(screen),
     )
   }
 
-  // ---- pair new device ----------------------------------------------------------
+  // ---- settings ------------------------------------------------------------------
 
-  fn desktop_pair(&mut self, cx: &mut Context<Self>) -> Div {
-    let qr_card = {
-      let mut c = card(
-        cx,
-        Some("Scan with your phone"),
-        Some("The code holds this computer's key and address. It refreshes every 60 seconds."),
-      )
-      .w(px(380.));
-      match &self.info {
-        Some((info, end)) => {
-          let left = end.saturating_duration_since(Instant::now()).as_secs_f32();
-          let pct = (left / info.expires_in.max(1) as f32 * 100.0).clamp(0.0, 100.0);
-          c = c.child(
-            v_flex()
-              .items_center()
-              .gap_4()
-              .child(qr(&info.link, 200.0))
-              .child(muted(
-                cx,
-                format!("Or connect by address: {}", {
-                  info
-                    .addrs
-                    .iter()
-                    .map(|a| a.ip().to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-                }),
-              ))
-              .child(Progress::new("countdown").value(pct).w(px(200.))),
-          );
-        }
-        None => {
-          c = c.child(
-            h_flex()
-              .gap_2()
-              .child(Spinner::new())
-              .child(muted(cx, "Starting…")),
-          )
-        }
-      }
-      c
-    };
-
-    let nearby = {
-      let mut c = card(cx, Some("Nearby phones"), Some("Found on this network."));
-      c = c.child(h_flex().justify_end().child(if self.scanning {
-        Spinner::new().into_any_element()
-      } else {
-        Button::new("rescan")
-          .ghost()
-          .small()
-          .label("Refresh")
-          .on_click(cx.listener(|this, _, _, cx| this.scan(cx)))
-          .into_any_element()
+  fn settings_nav(&mut self, cx: &mut Context<Self>) -> Div {
+    let back = h_flex()
+      .id("settings-back")
+      .items_center()
+      .gap_2()
+      .p_2()
+      .mb_3()
+      .text_sm()
+      .text_color(cx.theme().muted_foreground)
+      .cursor_pointer()
+      .child(icon(IconName::ChevronLeft).small())
+      .child("Back")
+      .on_click(cx.listener(|this, _, _, cx| {
+        let page = if this.devices.is_empty() {
+          Page::Pair
+        } else {
+          Page::Home
+        };
+        this.go(page, cx);
       }));
-      if self.nearby.is_empty() {
-        c = c.child(muted(cx, "No phones found yet."));
-      }
-      for (i, n) in self.nearby.iter().enumerate() {
-        let link = n.link.clone();
-        c = c.child(
-          h_flex()
-            .gap_3()
-            .p_3()
-            .rounded_lg()
-            .border_1()
-            .border_color(cx.theme().border)
-            .child(
-              v_flex()
-                .flex_1()
-                .child(div().font_medium().child(n.name.clone()))
-                .child(muted(cx, format!("{} · {}", n.os, n.addr.ip()))),
-            )
-            .child(
-              Button::new(("nearby", i))
-                .secondary()
-                .small()
-                .label("Pair")
-                .on_click(cx.listener(move |this, _, _, cx| this.connect(link.clone(), cx))),
-            ),
-        );
-      }
-      c
-    };
-
-    let address = card(
-      cx,
-      Some("Connect by address"),
-      Some("For phones on another network, a VPN or a USB cable."),
-    )
-    .child(
-      h_flex()
-        .gap_2()
-        .items_end()
-        .child(div().flex_1().child(Input::new(&self.address)))
-        .child(
-          Button::new("by-address")
-            .outline()
-            .label("Connect")
-            .on_click(cx.listener(|this, _, _, cx| {
-              let host = this.address.read(cx).value().to_string();
-              if !host.trim().is_empty() {
-                this.connect(host, cx);
-              }
-            })),
-        ),
-    );
-
-    v_flex()
-      .p_10()
-      .gap_6()
-      .child(self.heading(
-        cx,
-        "Pair a new device",
-        Some("Open the app on your phone, then scan the code or pick this computer from the list."),
-      ))
-      .children(error_line(cx, &self.error))
-      .child(
-        h_flex()
-          .flex_wrap()
-          .items_start()
-          .gap_6()
-          .child(qr_card)
-          .child(
-            v_flex()
-              .flex_1()
-              .min_w(px(320.))
-              .gap_6()
-              .child(nearby)
-              .child(address),
-          ),
-      )
+    let mut nav = self.nav_shell(cx).child(back);
+    for (i, s) in SETTINGS_SECTIONS.iter().enumerate() {
+      // only Connection exists so far
+      nav = nav.child(self.nav_row(cx, format!("sec-{s}"), None, *s, i == 0, i != 0, None, None));
+    }
+    nav
   }
-
-  // ---- confirm ------------------------------------------------------------------
-
-  fn desktop_confirm(&mut self, c: &Confirm, cx: &mut Context<Self>) -> Div {
-    let footer = if c.local_accepted {
-      h_flex()
-        .gap_2()
-        .justify_end()
-        .child(Spinner::new())
-        .child(muted(cx, "Waiting for the phone…"))
-    } else {
-      h_flex()
-        .gap_2()
-        .justify_end()
-        .child(
-          Button::new("mismatch")
-            .outline()
-            .label("Codes don't match")
-            .on_click(cx.listener(|this, _, _, cx| this.decide(false, cx))),
-        )
-        .child(
-          Button::new("pair")
-            .primary()
-            .label("Pair")
-            .on_click(cx.listener(|this, _, _, cx| this.decide(true, cx))),
-        )
-    };
-    div().flex().items_center().justify_center().p_10().child(
-      card(
-        cx,
-        Some(&format!("Pair with {}?", c.peer_name)),
-        Some("Check that your phone shows the same code. Pair only if they match."),
-      )
-      .w(px(480.))
-      .child(
-        v_flex()
-          .items_center()
-          .gap_5()
-          .child(OtpInput::new(&self.otp).disabled(true))
-          .child(Separator::horizontal())
-          .child(div().w_full().child(confirm_details(cx, c, "Device"))),
-      )
-      .child(footer),
-    )
-  }
-
-  // ---- settings -----------------------------------------------------------------
 
   fn desktop_settings(&mut self, cx: &mut Context<Self>) -> Div {
-    let tabs = [
-      (SettingsTab::Connection, "Connection"),
-      (SettingsTab::Features, "Features"),
-      (SettingsTab::Device, "Device"),
-    ];
-    let nav = v_flex()
-      .w(px(200.))
-      .gap_1()
-      .children(tabs.map(|(tab, label)| {
-        tab_button(label, self.settings_tab == tab).on_click(cx.listener(move |this, _, _, cx| {
-          this.settings_tab = tab;
-          cx.notify();
-        }))
-      }));
-
-    let body = match self.settings_tab {
-      SettingsTab::Connection => self.settings_connection(cx),
-      SettingsTab::Features => self.settings_features(cx),
-      SettingsTab::Device => self.settings_device(cx),
-    };
-    v_flex()
-      .p_10()
-      .gap_6()
-      .child(div().text_2xl().font_semibold().child("Settings"))
-      .child(
-        h_flex()
-          .items_start()
-          .gap_8()
-          .child(nav)
-          .child(body.flex_1().max_w(px(640.))),
-      )
-  }
-
-  fn row(
-    &self,
-    cx: &Context<Self>,
-    title: &str,
-    description: &str,
-    control: impl IntoElement,
-  ) -> Div {
-    h_flex()
-      .gap_4()
-      .items_center()
-      .child(
-        v_flex()
-          .flex_1()
-          .child(div().font_medium().child(title.to_string()))
-          .child(muted(cx, description.to_string())),
-      )
-      .child(control)
-  }
-
-  fn settings_connection(&mut self, cx: &mut Context<Self>) -> GroupBox {
     let discovery = self.settings.as_ref().is_some_and(|s| s.discovery);
-    card(cx, Some("Connection"), None)
-      .child(
-        self.row(
+    let connection = field_set(
+      cx,
+      "Connection",
+      None,
+      [
+        field_row(
           cx,
           "Discover on local network",
           "Announce this computer to phones on the same network.",
           Switch::new("discovery")
             .checked(discovery)
             .on_click(cx.listener(|this, on: &bool, _, cx| this.set_discovery(*on, cx))),
-        ),
-      )
-      .child(Separator::horizontal())
-      .child(self.row(
-        cx,
-        "Connect away from home",
-        "Use a relay when a direct connection fails.",
-        Switch::new("relay").disabled(true),
-      ))
-      .child(Separator::horizontal())
-      .child(self.row(
-        cx,
-        "USB connection",
-        "Connect over a cable when one is plugged in.",
-        Switch::new("usb").disabled(true),
-      ))
-  }
-
-  fn settings_features(&mut self, cx: &mut Context<Self>) -> GroupBox {
-    let name = self
-      .selected_device()
-      .map_or("this device".to_string(), |d| d.device.name.clone());
-    let mut c = card(
-      cx,
-      Some(&format!("Features for {name}")),
-      Some("Each feature can be turned off per device."),
+        )
+        .into_any_element(),
+        field_row(
+          cx,
+          "Connect away from home",
+          "Use a relay when a direct connection fails.",
+          Switch::new("relay-on").disabled(true),
+        )
+        .into_any_element(),
+        v_flex()
+          .gap_3()
+          .child(div().text_sm().font_medium().child("Relay server"))
+          .child(Input::new(&self.relay).disabled(true))
+          .child(muted(cx, "Leave empty to use the default relay."))
+          .into_any_element(),
+        field_row(
+          cx,
+          "USB connection",
+          "Connect over a cable when one is plugged in.",
+          Switch::new("usb").disabled(true),
+        )
+        .into_any_element(),
+      ],
     );
-    for (i, f) in FEATURES.iter().enumerate() {
-      if i > 0 {
-        c = c.child(Separator::horizontal());
-      }
-      c = c.child(self.row(cx, f, "Coming soon", Switch::new(*f).disabled(true)));
-    }
-    c
-  }
 
-  fn settings_device(&mut self, cx: &mut Context<Self>) -> GroupBox {
-    let Some(d) = self.selected_device().cloned() else {
-      return card(cx, Some("Device"), None).child(muted(cx, "No device paired."));
-    };
-    let id = d.device.id.clone();
-    card(cx, Some("Device"), None).child(
-      self.row(
+    let mut page = v_flex()
+      .py_8()
+      .px_10()
+      .gap_8()
+      .max_w(px(760.))
+      .child(div().text_2xl().font_semibold().child("Settings"))
+      .child(connection);
+
+    if let Some(d) = self.selected_device().cloned() {
+      let features = field_set(
         cx,
-        &format!("Unpair {}", d.device.name),
-        "Removes its key. You'll need to pair again to reconnect.",
-        Button::new("unpair")
-          .danger()
-          .label("Unpair device")
-          .on_click(cx.listener(move |this, _, _, cx| this.unpair(id.clone(), cx))),
-      ),
-    )
+        format!("Features for {}", d.device.name),
+        Some("Each feature can be turned off per device."),
+        FEATURE_SETTINGS.map(|(label, description)| {
+          field_row(cx, label, description, Switch::new(label).disabled(true)).into_any_element()
+        }),
+      );
+      let id = d.device.id.clone();
+      page = page
+        .child(Separator::horizontal())
+        .child(features)
+        .child(Separator::horizontal())
+        .child(
+          h_flex()
+            .flex_wrap()
+            .items_center()
+            .gap_4()
+            .child(
+              v_flex()
+                .flex_1()
+                .gap_0p5()
+                .child(
+                  div()
+                    .text_sm()
+                    .font_medium()
+                    .child(format!("Unpair {}", d.device.name)),
+                )
+                .child(
+                  div()
+                    .text_size(px(13.))
+                    .text_color(cx.theme().muted_foreground)
+                    .child("Removes its key. You'll need to pair again to reconnect."),
+                ),
+            )
+            .child(
+              Button::new("unpair")
+                .danger()
+                .label("Unpair device")
+                .on_click(cx.listener(move |this, _, _, cx| this.unpair(id.clone(), cx))),
+            ),
+        );
+    }
+    page
   }
-}
-
-fn tab_button(label: &'static str, active: bool) -> Button {
-  let b = Button::new(label).label(label);
-  if active { b.secondary() } else { b.ghost() }
 }

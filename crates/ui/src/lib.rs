@@ -12,6 +12,7 @@ pub use app::Platform;
 pub use backend::Backend;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub use backend::DaemonBackend;
+pub use widgets::AppAssets;
 
 /// Positron's shadcn palette (zinc + blue), dark only.
 fn apply_theme(cx: &mut App) {
@@ -24,6 +25,27 @@ fn apply_theme(cx: &mut App) {
 
   Theme::global_mut(cx).dark_theme = dark;
   Theme::change(ThemeMode::Dark, None, cx);
+
+  // Geist, the design's typeface (SIL Open Font License, vercel/geist-font)
+  cx.text_system()
+    .add_fonts(vec![
+      include_bytes!("../fonts/Geist-Regular.otf")
+        .as_slice()
+        .into(),
+      include_bytes!("../fonts/Geist-Medium.otf")
+        .as_slice()
+        .into(),
+      include_bytes!("../fonts/Geist-SemiBold.otf")
+        .as_slice()
+        .into(),
+      include_bytes!("../fonts/GeistMono-Regular.otf")
+        .as_slice()
+        .into(),
+    ])
+    .expect("load Geist");
+  let theme = Theme::global_mut(cx);
+  theme.font_family = "Geist".into();
+  theme.mono_font_family = "Geist Mono".into();
 }
 
 /// Shared entry point for desktop and mobile: opens the app window on `backend`
@@ -48,5 +70,7 @@ pub fn open_root(cx: &mut App, backend: Arc<dyn Backend>, platform: Platform) {
 /// Desktop entry point (Linux, macOS, Windows): talks to `aurorad`.
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub fn run_desktop() {
-  gpui_kit::application().run(|cx| open_root(cx, Arc::new(DaemonBackend), Platform::Desktop));
+  gpui_kit::application()
+    .with_assets(AppAssets)
+    .run(|cx| open_root(cx, Arc::new(DaemonBackend), Platform::Desktop));
 }

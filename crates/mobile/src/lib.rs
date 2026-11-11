@@ -64,6 +64,7 @@ fn android_main(app: android_activity::AndroidApp) {
   };
   // Blocks on the Android event loop; callback runs once the surface exists.
   gpui::Application::with_platform(shared.into_rc())
+    .with_assets(aurora_ui::AppAssets)
     .run(move |cx| aurora_ui::open_root(cx, backend.clone(), aurora_ui::Platform::Mobile));
 }
 
