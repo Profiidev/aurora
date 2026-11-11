@@ -7,7 +7,7 @@ use std::{path::Path, sync::Arc};
 use anyhow::Result;
 use aurora_core::{
   engine::{Engine, Settings},
-  types::{DeviceStatus, Event, Nearby, PairInfo, PairState},
+  types::{AppSettings, DeviceStatus, Event, Nearby, PairInfo, PairState},
 };
 use aurora_ui::Backend;
 use tokio::{runtime::Runtime, sync::broadcast::error::RecvError};
@@ -64,6 +64,20 @@ impl Backend for EngineBackend {
   }
   fn unpair(&self, id: &str) -> Result<()> {
     self.rt.block_on(self.engine.unpair(id))
+  }
+  fn settings(&self) -> Result<AppSettings> {
+    let s = self.engine.settings();
+    Ok(AppSettings {
+      name: s.name,
+      discovery: s.discovery,
+    })
+  }
+  // ponytail: not persisted, the phone has no config files; add a store when settings grow
+  fn set_discovery(&self, on: bool) -> Result<()> {
+    let mut s = self.engine.settings();
+    s.discovery = on;
+    self.engine.set_settings(s);
+    Ok(())
   }
   #[cfg(target_os = "android")]
   fn scan_qr(&self) -> Result<Option<String>> {

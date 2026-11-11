@@ -1,5 +1,8 @@
 mod app;
 mod backend;
+mod desktop;
+mod mobile;
+mod widgets;
 
 use std::sync::Arc;
 

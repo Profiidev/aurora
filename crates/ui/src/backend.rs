@@ -1,5 +1,5 @@
 use anyhow::Result;
-use aurora_core::types::{DeviceStatus, Event, Nearby, PairInfo, PairState};
+use aurora_core::types::{AppSettings, DeviceStatus, Event, Nearby, PairInfo, PairState};
 
 /// What the views need from the pairing engine. Blocking: views call it from
 /// a background task. Desktop talks to `aurorad`, mobile owns an engine.
@@ -13,6 +13,8 @@ pub trait Backend: Send + Sync + 'static {
   fn decide(&self, accept: bool) -> Result<()>;
   fn nearby(&self) -> Result<Vec<Nearby>>;
   fn unpair(&self, id: &str) -> Result<()>;
+  fn settings(&self) -> Result<AppSettings>;
+  fn set_discovery(&self, on: bool) -> Result<()>;
   /// Live camera scan for an `aurora://pair` QR code. `None` when cancelled.
   fn scan_qr(&self) -> Result<Option<String>> {
     anyhow::bail!("QR scanning is only available in the mobile app")
@@ -63,6 +65,12 @@ mod daemon {
     }
     fn unpair(&self, id: &str) -> Result<()> {
       ipc::send::<cmd::DevicesUnpair>(id.into())
+    }
+    fn settings(&self) -> Result<AppSettings> {
+      ipc::send::<cmd::SettingsGet>(())
+    }
+    fn set_discovery(&self, on: bool) -> Result<()> {
+      ipc::send::<cmd::SettingsSetDiscovery>(on)
     }
 
     fn events(&self) -> Box<dyn Iterator<Item = Event> + Send> {
