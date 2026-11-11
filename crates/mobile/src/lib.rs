@@ -4,6 +4,8 @@ extern crate gpui_mobile;
 
 mod backend;
 pub mod platform;
+#[cfg(target_os = "android")]
+mod scanner;
 
 pub use platform::is_android_emulator;
 

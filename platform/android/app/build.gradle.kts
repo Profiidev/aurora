@@ -123,5 +123,13 @@ dependencies {
     implementation("androidx.biometric:biometric:1.1.0")
     // AndroidX Media for MediaSessionCompat (used by GpuiMediaSession for system controls)
     implementation("androidx.media:media:1.7.1")
+    // QR scanner (AuroraQrActivity): CameraX preview + analysis feeding ML Kit's bundled model
+    val cameraX = "1.3.4"
+    implementation("androidx.camera:camera-core:$cameraX")
+    implementation("androidx.camera:camera-camera2:$cameraX")
+    implementation("androidx.camera:camera-lifecycle:$cameraX")
+    implementation("androidx.camera:camera-view:$cameraX")
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    implementation("androidx.activity:activity:1.9.3")
 
 }

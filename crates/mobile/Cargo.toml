@@ -27,6 +27,8 @@ tokio.workspace = true
 gpui-mobile = { workspace = true, features = ["video_player", "camera"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-gpui-mobile.workspace = true
+# permission_handler: the camera prompt for the QR scanner
+gpui-mobile = { workspace = true, features = ["permission_handler"] }
+jni = "0.22"
 android_logger.workspace = true
 android-activity.workspace = true

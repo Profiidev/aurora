@@ -13,6 +13,11 @@ pub trait Backend: Send + Sync + 'static {
   fn decide(&self, accept: bool) -> Result<()>;
   fn nearby(&self) -> Result<Vec<Nearby>>;
   fn unpair(&self, id: &str) -> Result<()>;
+  /// Live camera scan for an `aurora://pair` QR code. `None` when cancelled.
+  fn scan_qr(&self) -> Result<Option<String>> {
+    anyhow::bail!("QR scanning is only available in the mobile app")
+  }
+  fn cancel_scan(&self) {}
   /// Blocks between events and keeps going if the source drops
   fn events(&self) -> Box<dyn Iterator<Item = Event> + Send>;
 }

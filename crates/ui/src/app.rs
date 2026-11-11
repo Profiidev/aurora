@@ -562,11 +562,25 @@ impl AppView {
       .children(rows)
   }
 
-  /// Camera scanning arrives with the Android camera plugin
+  /// Opens the live camera view; a scanned `aurora://pair` code starts pairing
   fn scan_qr(&mut self, cx: &mut Context<Self>) {
-    self.error =
-      Some("QR scanning is not available yet; use Computers nearby or an address.".into());
-    cx.notify();
+    self.error = None;
+    self.bg(
+      cx,
+      |b| {
+        // an open waiting session would refuse to dial out
+        let _ = b.cancel_pairing();
+        b.scan_qr()
+      },
+      |this, res, cx| {
+        match res {
+          Ok(Some(link)) => this.connect(link, cx),
+          Ok(None) => this.open_pair(cx),
+          Err(e) => this.error = Some(format!("{e:#}").into()),
+        }
+        cx.notify();
+      },
+    );
   }
 }
 

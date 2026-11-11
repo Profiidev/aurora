@@ -65,6 +65,14 @@ impl Backend for EngineBackend {
   fn unpair(&self, id: &str) -> Result<()> {
     self.rt.block_on(self.engine.unpair(id))
   }
+  #[cfg(target_os = "android")]
+  fn scan_qr(&self) -> Result<Option<String>> {
+    crate::scanner::scan().map_err(anyhow::Error::msg)
+  }
+  #[cfg(target_os = "android")]
+  fn cancel_scan(&self) {
+    crate::scanner::cancel();
+  }
   fn events(&self) -> Box<dyn Iterator<Item = Event> + Send> {
     let mut rx = self.engine.events();
     Box::new(std::iter::from_fn(move || match rx.blocking_recv() {
