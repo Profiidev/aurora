@@ -81,9 +81,6 @@ license.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
-[dependencies]
-aurora_cli.workspace = true
-
 # `cargo packager --release` (CI: .github/workflows/desktop-release.yml)
 [package.metadata.packager]
 product-name = "Aurora"
@@ -118,6 +115,9 @@ depends = [
 
 [package.metadata.packager.nsis]
 installer-icon = "platform/packaging/icons/icon.ico"
+
+[dependencies]
+aurora_cli.workspace = true
 
 [profile.release]
 opt-level = "z"
