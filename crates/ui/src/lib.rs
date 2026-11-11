@@ -1,17 +1,14 @@
-use gpui::{App, Context, IntoElement, Render, Window, WindowOptions, div, prelude::*};
+mod app;
+mod backend;
 
-pub struct Home;
+use std::sync::Arc;
 
-impl Render for Home {
-  fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-    div()
-      .size_full()
-      .flex()
-      .items_center()
-      .justify_center()
-      .child("Hello from Aurora")
-  }
-}
+use gpui::{App, AppContext, WindowOptions};
+
+pub use app::Platform;
+pub use backend::Backend;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub use backend::DaemonBackend;
 
 /// Positron's shadcn palette (zinc + blue), dark only.
 fn apply_theme(cx: &mut App) {
@@ -26,7 +23,8 @@ fn apply_theme(cx: &mut App) {
   Theme::change(ThemeMode::Dark, None, cx);
 }
 
-pub fn open_root(cx: &mut App) {
+/// Shared entry point for desktop and mobile: opens the app window on `backend`
+pub fn open_root(cx: &mut App, backend: Arc<dyn Backend>, platform: Platform) {
   gpui_kit::init(cx);
   apply_theme(cx);
   let options = WindowOptions {
@@ -36,7 +34,7 @@ pub fn open_root(cx: &mut App) {
   };
 
   cx.open_window(options, |window, cx| {
-    let content = cx.new(|_| Home);
+    let content = cx.new(|cx| app::AppView::new(backend, platform, window, cx));
     cx.new(|cx| gpui_kit::component::Root::new(content, window, cx))
   })
   .expect("open root window");
@@ -44,8 +42,8 @@ pub fn open_root(cx: &mut App) {
   cx.activate(true);
 }
 
-/// Desktop entry point (Linux, macOS, Windows).
+/// Desktop entry point (Linux, macOS, Windows): talks to `aurorad`.
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub fn run_desktop() {
-  gpui_kit::application().run(open_root);
+  gpui_kit::application().run(|cx| open_root(cx, Arc::new(DaemonBackend), Platform::Desktop));
 }
