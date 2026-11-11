@@ -10,7 +10,9 @@ use tracing::{error, info};
 async fn main() -> Result<()> {
   tracing_subscriber::fmt()
     .with_env_filter(
-      tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+      // noq_proto warns "failed closing path" each time a peer's last path idles out
+      tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| "info,noq_proto=error".into()),
     )
     .init();
 
