@@ -114,7 +114,7 @@ impl AppView {
   // ---- pair --------------------------------------------------------------------
 
   fn mobile_pair(&mut self, cx: &mut Context<Self>) -> Div {
-    let mut nearby = v_flex().gap_2();
+    let mut nearby = v_flex().gap_2().debug_selector(|| "nearby-list".into());
     if self.nearby.is_empty() {
       nearby = nearby.child(muted(cx, "No devices found yet."));
     }
@@ -131,10 +131,7 @@ impl AppView {
               .into_any_element(),
           ),
           n.name.clone(),
-          Some(match n.addr {
-            Some(a) => format!("{} · {}", n.os, a.ip()).into(),
-            None => n.os.clone().into(),
-          }),
+          Some(crate::app::nearby_detail(&n)),
           Some(
             Button::new(("nearby", i))
               .cursor_pointer()
@@ -248,7 +245,8 @@ impl AppView {
               })
               .child(self.discovery_switch("discovery-pair", cx)),
           )
-          .child(if self.discovery() {
+          // a phone at the end of a cable shows up even with discovery off
+          .child(if self.discovery() || self.nearby.iter().any(|n| n.usb) {
             nearby
           } else {
             v_flex().child(muted(
@@ -540,18 +538,32 @@ impl AppView {
     let id = d.device.id.clone();
     let picker = self.device_picker(&d.device.name, cx);
     let switch = self.discovery_switch("discovery-settings", cx);
-    let phone = field_set(
-      cx,
-      "This phone",
-      None,
-      [field_row(
+    let mut rows = vec![
+      field_row(
         cx,
         "Find devices nearby",
         "Find and be found on this Wi-Fi. Uses more battery.",
         switch,
       )
-      .into_any_element()],
-    );
+      .into_any_element(),
+    ];
+    if let Some(usb) = self.usb() {
+      rows.push(
+        field_row(
+          cx,
+          "USB connection",
+          "Connect to a computer over a cable when one is plugged in.",
+          div().debug_selector(|| "usb-settings".into()).child(
+            Switch::new("usb-settings")
+              .cursor_pointer()
+              .checked(usb)
+              .on_click(cx.listener(|this, on: &bool, _, cx| this.set_usb(*on, cx))),
+          ),
+        )
+        .into_any_element(),
+      );
+    }
+    let phone = field_set(cx, "This phone", None, rows);
     let features = field_set(
       cx,
       picker,
@@ -666,6 +678,34 @@ mod tests {
     draw(vcx);
     draw(vcx);
     assert!(!vcx.update(|window, cx| window.has_active_dialog(cx)));
+  }
+
+  #[gpui::test]
+  fn the_usb_switch_shows_only_where_usb_exists(cx: &mut TestAppContext) {
+    let fake = FakeBackend::new(vec![device("a", "home")]);
+    let (app, vcx) = open_app(cx, Platform::Mobile, fake.clone());
+    click(vcx, "tab-Settings");
+    assert!(shown(vcx, "usb-settings"));
+    click(vcx, "usb-settings");
+    assert!(fake.calls().contains(&"set_usb false".to_string()));
+
+    fake.set(|s| s.settings.usb = None);
+    vcx.update_entity(&app, |a, cx| a.refresh(cx));
+    draw(vcx);
+    assert!(!shown(vcx, "usb-settings"), "hidden on iOS");
+  }
+
+  #[gpui::test]
+  fn a_cabled_device_is_listed_with_discovery_off(cx: &mut TestAppContext) {
+    let fake = FakeBackend::new(vec![]);
+    let (app, vcx) = open_app(cx, Platform::Mobile, fake.clone());
+    assert!(!shown(vcx, "nearby-list"), "discovery is off");
+    let mut n = nearby("laptop");
+    n.usb = true;
+    fake.set(|s| s.nearby = vec![n]);
+    vcx.update_entity(&app, |a, cx| a.scan(cx));
+    draw(vcx);
+    assert!(shown(vcx, "nearby-list"));
   }
 
   #[gpui::test]

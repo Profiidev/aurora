@@ -294,10 +294,7 @@ impl AppView {
           true,
           Some(icon(IconName::Smartphone).small().into_any_element()),
           n.name.clone(),
-          Some(match n.addr {
-            Some(a) => format!("{} · {}", n.os, a.ip()).into(),
-            None => n.os.clone().into(),
-          }),
+          Some(crate::app::nearby_detail(&n)),
           Some(
             Button::new(("nearby", i))
               .cursor_pointer()
@@ -755,7 +752,11 @@ impl AppView {
           cx,
           "USB connection",
           "Connect over a cable when one is plugged in.",
-          Switch::new("usb").cursor_pointer().disabled(true),
+          Switch::new("usb")
+            .cursor_pointer()
+            .checked(self.usb().unwrap_or(false))
+            .disabled(self.usb().is_none())
+            .on_click(cx.listener(|this, on: &bool, _, cx| this.set_usb(*on, cx))),
         )
         .into_any_element(),
       ],
