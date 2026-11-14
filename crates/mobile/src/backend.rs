@@ -41,6 +41,7 @@ impl EngineBackend {
       port: None,
       relay: true,
       usb: USB && loaded.config.transport.usb,
+      bluetooth: loaded.config.transport.bluetooth,
     };
     multicast(settings.discovery);
     let engine = rt.block_on(Engine::start(settings, dir))?;
@@ -87,7 +88,16 @@ impl Backend for EngineBackend {
       name: s.name,
       discovery: s.discovery,
       usb: USB.then_some(s.usb),
+      bluetooth: Some(s.bluetooth),
     })
+  }
+  fn set_bluetooth(&self, on: bool) -> Result<()> {
+    config::set_bluetooth(&self.dir, on)?;
+    let _guard = self.rt.enter();
+    let mut s = self.engine.settings();
+    s.bluetooth = on;
+    self.engine.set_settings(s);
+    Ok(())
   }
   fn set_usb(&self, on: bool) -> Result<()> {
     anyhow::ensure!(USB, "this phone has no USB connection");

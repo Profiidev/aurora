@@ -16,6 +16,10 @@ pub trait Backend: Send + Sync + 'static {
   fn settings(&self) -> Result<AppSettings>;
   fn set_discovery(&self, on: bool) -> Result<()>;
   fn set_usb(&self, on: bool) -> Result<()>;
+  fn set_bluetooth(&self, on: bool) -> Result<()>;
+  /// Tells the engine a window is open, for as long as the process lives;
+  /// Bluetooth only runs while someone looks
+  fn hold_presence(&self) {}
   /// Live camera scan for an `aurora://pair` QR code. `None` when cancelled.
   fn scan_qr(&self) -> Result<Option<String>> {
     anyhow::bail!("QR scanning is only available in the mobile app")
@@ -75,6 +79,20 @@ mod daemon {
     }
     fn set_usb(&self, on: bool) -> Result<()> {
       ipc::send::<cmd::SettingsSetUsb>(on)
+    }
+    fn set_bluetooth(&self, on: bool) -> Result<()> {
+      ipc::send::<cmd::SettingsSetBluetooth>(on)
+    }
+    fn hold_presence(&self) {
+      std::thread::spawn(|| {
+        loop {
+          // the daemon counts us while this stream is open; it never sends
+          if let Ok(mut held) = ipc::subscribe::<cmd::UiPresent>(()) {
+            while let Some(Ok(())) = held.next() {}
+          }
+          sleep(Duration::from_secs(2));
+        }
+      });
     }
 
     fn events(&self) -> Box<dyn Iterator<Item = Event> + Send> {

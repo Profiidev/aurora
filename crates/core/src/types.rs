@@ -66,6 +66,9 @@ pub struct Nearby {
   /// Found over a USB cable
   #[serde(default)]
   pub usb: bool,
+  /// Found over Bluetooth
+  #[serde(default)]
+  pub bluetooth: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -90,4 +93,7 @@ pub struct AppSettings {
   /// USB connections; `None` where the platform has none (iOS)
   #[serde(default)]
   pub usb: Option<bool>,
+  /// Bluetooth fallback; `None` where the platform has none
+  #[serde(default)]
+  pub bluetooth: Option<bool>,
 }

@@ -5,7 +5,7 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::{Result, bail};
 use aurora_proto::{Id, Msg, read_msg, write_msg};
-use aurora_transport::{Hints, Seen, Via};
+use aurora_transport::{Hints, LinkKind, Seen, Via};
 use tokio::{sync::broadcast, time::timeout};
 use tracing::debug;
 
@@ -24,7 +24,8 @@ impl Engine {
     loop {
       match seen.recv().await {
         Ok(Seen::Found { id, addrs, via }) => {
-          let usb = matches!(via, Via::Link(_));
+          let usb = via == Via::Link(LinkKind::Usb);
+          let bluetooth = via == Via::Link(LinkKind::Bluetooth);
           if self.nearby.lock().unwrap().contains_key(&id) && !usb {
             continue;
           }
@@ -43,6 +44,7 @@ impl Engine {
                   }
                   .link(),
                   usb,
+                  bluetooth,
                 };
                 engine.nearby.lock().unwrap().insert(id, nearby);
               }

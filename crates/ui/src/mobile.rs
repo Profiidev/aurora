@@ -556,6 +556,22 @@ impl AppView {
         .into_any_element(),
       );
     }
+    if let Some(bluetooth) = self.bluetooth() {
+      rows.push(
+        field_row(
+          cx,
+          "Bluetooth fallback",
+          "While the app is open and the computer is offline, reach it over Bluetooth.",
+          div().debug_selector(|| "bluetooth-settings".into()).child(
+            Switch::new("bluetooth-settings")
+              .cursor_pointer()
+              .checked(bluetooth)
+              .on_click(cx.listener(|this, on: &bool, _, cx| this.set_bluetooth(*on, cx))),
+          ),
+        )
+        .into_any_element(),
+      );
+    }
     let phone = field_set(cx, "This phone", None, rows);
     let features = field_set(
       cx,
@@ -682,10 +698,15 @@ mod tests {
     click(vcx, "usb-settings");
     assert!(fake.calls().contains(&"set_usb false".to_string()));
 
-    fake.set(|s| s.settings.usb = None);
+    assert!(shown(vcx, "bluetooth-settings"));
+    fake.set(|s| (s.settings.usb, s.settings.bluetooth) = (None, None));
     vcx.update_entity(&app, |a, cx| a.refresh(cx));
     draw(vcx);
     assert!(!shown(vcx, "usb-settings"), "hidden on iOS");
+    assert!(
+      !shown(vcx, "bluetooth-settings"),
+      "hidden without Bluetooth"
+    );
   }
 
   #[gpui::test]

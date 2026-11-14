@@ -1,12 +1,13 @@
-//! Connections to paired devices. A device can be reached over the network
-//! and over a link (USB) at once; both connections are kept and messages go
-//! over the link while it is up, so pulling the cable loses nothing.
+//! Connections to paired devices. A device can be reached over USB, the
+//! network and Bluetooth at once; each connection is kept and messages take
+//! the best one, so pulling the cable loses nothing. Bluetooth is a fallback
+//! and is dropped once a better path exists (see `engine::bluetooth`).
 
 use std::{sync::Arc, time::Duration};
 
 use anyhow::{Result, anyhow, bail};
 use aurora_proto::{Id, Msg, read_msg, write_msg};
-use aurora_transport::{Connection, Hints, LinkEvent, SendStream, Via, remote_id, via};
+use aurora_transport::{Connection, Hints, LinkEvent, LinkKind, SendStream, Via, remote_id, via};
 use tokio::{
   sync::broadcast::error::RecvError,
   time::{sleep, timeout},
@@ -24,16 +25,46 @@ const RECONNECT_EVERY: Duration = Duration::from_secs(10);
 /// Long enough for a lookup through n0's DNS and a relay
 pub(super) const DIAL_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// The connections to one paired device
+/// How a connection reaches the device, best first
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Path {
+  Usb,
+  Net,
+  Bluetooth,
+}
+
+impl Path {
+  pub(super) fn of(conn: &Connection) -> Self {
+    match via(conn) {
+      Via::Link(LinkKind::Usb) => Path::Usb,
+      Via::Link(LinkKind::Bluetooth) => Path::Bluetooth,
+      Via::Direct(_) | Via::Relay => Path::Net,
+    }
+  }
+
+  fn link(self) -> Option<LinkKind> {
+    match self {
+      Path::Usb => Some(LinkKind::Usb),
+      Path::Bluetooth => Some(LinkKind::Bluetooth),
+      Path::Net => None,
+    }
+  }
+}
+
+/// The connections to one paired device, one per [`Path`]
 pub(super) struct Live {
-  net: Option<Connection>,
-  link: Option<Connection>,
+  /// Indexed by `Path as usize`, so iteration goes best first
+  conns: [Option<Connection>; 3],
   pub(super) status: DeviceStatus,
 }
 
 impl Live {
   pub(super) fn conns(&self) -> impl Iterator<Item = Connection> + use<> {
-    self.link.clone().into_iter().chain(self.net.clone())
+    self.conns.clone().into_iter().flatten()
+  }
+
+  pub(super) fn has(&self, path: Path) -> bool {
+    self.conns[path as usize].is_some()
   }
 
   /// The status with the path messages take right now
@@ -44,8 +75,8 @@ impl Live {
     }
   }
 
-  fn slot(&mut self, link: bool) -> &mut Option<Connection> {
-    if link { &mut self.link } else { &mut self.net }
+  fn slot(&mut self, path: Path) -> &mut Option<Connection> {
+    &mut self.conns[path as usize]
   }
 }
 
@@ -53,10 +84,6 @@ impl Live {
 fn dialed_by_lower(conn: &Connection, me: &Id) -> bool {
   let we_dialed = conn.side().is_client();
   we_dialed == (*me < remote_id(conn))
-}
-
-fn is_link(conn: &Connection) -> bool {
-  matches!(via(conn), Via::Link(_))
 }
 
 impl Engine {
@@ -145,8 +172,8 @@ impl Engine {
       Msg::Who => {
         let s = self.settings();
         // devices that find us by mDNS, or at the other end of our cable,
-        // learn our name
-        if s.discovery || is_link(&conn) {
+        // learn our name; Bluetooth range is no more consent than the LAN
+        if s.discovery || Path::of(&conn) == Path::Usb {
           write_msg(
             &mut send,
             &Msg::Info {
@@ -188,7 +215,7 @@ impl Engine {
     sleep(Duration::from_secs(1)).await;
     loop {
       let due: Vec<Device> = (self.store.lock().unwrap().devices().iter())
-        .filter(|d| (self.live.lock().unwrap().get(&d.id)).is_none_or(|l| l.net.is_none()))
+        .filter(|d| (self.live.lock().unwrap().get(&d.id)).is_none_or(|l| !l.has(Path::Net)))
         .cloned()
         .collect();
       for device in due {
@@ -237,7 +264,10 @@ impl Engine {
     let links = self.node.links();
     (self.store.lock().unwrap().devices().iter())
       .filter(|d| unhex(&d.id).is_ok_and(|p| self.node.id() < p && links.is_linked(&p)))
-      .filter(|d| (self.live.lock().unwrap().get(&d.id)).is_none_or(|l| l.link.is_none()))
+      .filter(|d| {
+        (self.live.lock().unwrap().get(&d.id))
+          .is_none_or(|l| !l.has(Path::Usb) && !l.has(Path::Bluetooth))
+      })
       .cloned()
       .collect()
   }
@@ -323,7 +353,7 @@ impl Engine {
     let Some(mut device) = self.store.lock().unwrap().get(&id).cloned() else {
       return;
     };
-    let link = is_link(&conn);
+    let path = Path::of(&conn);
     // remember the direct address that works now, for the next reconnect
     if let Via::Direct(a) = via(&conn) {
       let mut store = self.store.lock().unwrap();
@@ -340,12 +370,11 @@ impl Engine {
     let kept = {
       let mut live = self.live.lock().unwrap();
       let entry = live.entry(id.clone()).or_insert_with(|| Live {
-        net: None,
-        link: None,
+        conns: Default::default(),
         status: status.clone(),
       });
       let me = self.node.id();
-      let slot = entry.slot(link);
+      let slot = entry.slot(path);
       // both sides dialed: each keeps the one the lower id dialed, so they
       // agree on which one survives
       let replaces = match slot {
@@ -374,10 +403,9 @@ impl Engine {
     let links = self.node.links().clone();
     // QUIC only notices a pulled cable at its idle timeout
     let unplugged = async {
-      if link {
-        links.gone(&peer).await
-      } else {
-        std::future::pending().await
+      match path.link() {
+        Some(kind) => links.gone_by(kind, &peer).await,
+        None => std::future::pending().await,
       }
     };
     tokio::pin!(unplugged);
@@ -405,13 +433,13 @@ impl Engine {
     let left = {
       let mut live = self.live.lock().unwrap();
       let ours = |l: &Live| {
-        let slot = if link { &l.link } else { &l.net };
+        let slot = &l.conns[path as usize];
         slot.as_ref().map(Connection::stable_id) == Some(conn.stable_id())
       };
       match live.get_mut(&id) {
         Some(l) if ours(l) => {
-          *l.slot(link) = None;
-          if l.net.is_none() && l.link.is_none() {
+          *l.slot(path) = None;
+          if l.conns().next().is_none() {
             live.remove(&id);
             Some(None)
           } else {

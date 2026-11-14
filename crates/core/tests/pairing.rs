@@ -18,6 +18,7 @@ fn settings(name: &str) -> Settings {
     port: None,
     relay: false,
     usb: false,
+    bluetooth: false,
   }
 }
 

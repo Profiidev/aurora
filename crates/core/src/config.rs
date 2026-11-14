@@ -55,11 +55,16 @@ pub struct NetworkConfig {
 pub struct TransportConfig {
   /// Connect to phones over USB (Android accessory mode)
   pub usb: bool,
+  /// Fall back to Bluetooth LE while the app is open and a device is offline
+  pub bluetooth: bool,
 }
 
 impl Default for TransportConfig {
   fn default() -> Self {
-    Self { usb: true }
+    Self {
+      usb: true,
+      bluetooth: true,
+    }
   }
 }
 
@@ -91,6 +96,7 @@ impl Config {
       port: self.network.port,
       relay: self.network.relay,
       usb: self.transport.usb,
+      bluetooth: self.transport.bluetooth,
     }
   }
 }
@@ -144,6 +150,10 @@ pub fn set_discovery(dir: &Path, enabled: bool) -> Result<()> {
 
 pub fn set_usb(dir: &Path, enabled: bool) -> Result<()> {
   set_flag(dir, "transport", "usb", enabled)
+}
+
+pub fn set_bluetooth(dir: &Path, enabled: bool) -> Result<()> {
+  set_flag(dir, "transport", "bluetooth", enabled)
 }
 
 fn set_flag(dir: &Path, section: &str, key: &str, value: bool) -> Result<()> {

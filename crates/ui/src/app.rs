@@ -61,6 +61,7 @@ impl AppView {
       cx.new(|cx| InputState::new(window, cx).placeholder("aurora:// link or device ID"));
     let relay = cx.new(|cx| InputState::new(window, cx).placeholder("https://relay.example.com"));
 
+    backend.hold_presence();
     // events arrive on a blocking iterator; hand them to the UI thread
     let (tx, rx) = flume::unbounded();
     let source = backend.clone();
@@ -391,6 +392,23 @@ impl AppView {
     self.settings.as_ref().and_then(|s| s.usb)
   }
 
+  /// Whether the Bluetooth fallback is on; `None` where there is none
+  pub(crate) fn bluetooth(&self) -> Option<bool> {
+    self.settings.as_ref().and_then(|s| s.bluetooth)
+  }
+
+  pub(crate) fn set_bluetooth(&mut self, on: bool, cx: &mut Context<Self>) {
+    if let Some(s) = &mut self.settings {
+      s.bluetooth = Some(on);
+    }
+    self.bg(
+      cx,
+      move |b| b.set_bluetooth(on),
+      |this, _, cx| this.refresh(cx),
+    );
+    cx.notify();
+  }
+
   pub(crate) fn set_usb(&mut self, on: bool, cx: &mut Context<Self>) {
     if let Some(s) = &mut self.settings {
       s.usb = Some(on);
@@ -457,10 +475,11 @@ pub(crate) fn connection_label(d: &DeviceStatus) -> SharedString {
 
 /// The second line of a nearby device: its OS and how it was found
 pub(crate) fn nearby_detail(n: &Nearby) -> SharedString {
-  match (n.usb, n.addr) {
-    (true, _) => format!("{} · USB", n.os).into(),
-    (false, Some(a)) => format!("{} · {}", n.os, a.ip()).into(),
-    (false, None) => n.os.clone().into(),
+  match (n.usb, n.bluetooth, n.addr) {
+    (true, _, _) => format!("{} · USB", n.os).into(),
+    (_, true, _) => format!("{} · Bluetooth", n.os).into(),
+    (_, _, Some(a)) => format!("{} · {}", n.os, a.ip()).into(),
+    _ => n.os.clone().into(),
   }
 }
 
@@ -616,6 +635,17 @@ mod tests {
   }
 
   #[gpui::test]
+  fn bluetooth_changes_reach_the_backend(cx: &mut TestAppContext) {
+    let fake = FakeBackend::new(vec![]);
+    let (app, vcx) = open_app(cx, Platform::Desktop, fake.clone());
+    vcx.run_until_parked();
+    vcx.update_entity(&app, |a, cx| a.set_bluetooth(false, cx));
+    vcx.run_until_parked();
+    assert!(fake.calls().contains(&"set_bluetooth false".to_string()));
+    vcx.read_entity(&app, |a, _| assert_eq!(a.bluetooth(), Some(false)));
+  }
+
+  #[gpui::test]
   fn usb_changes_reach_the_backend(cx: &mut TestAppContext) {
     let fake = FakeBackend::new(vec![]);
     let (app, vcx) = open_app(cx, Platform::Desktop, fake.clone());
@@ -642,7 +672,9 @@ mod tests {
     assert_eq!(super::nearby_detail(&n).as_ref(), "Linux · 10.0.0.3");
     n.usb = true;
     assert_eq!(super::nearby_detail(&n).as_ref(), "Linux · USB");
-    (n.usb, n.addr) = (false, None);
+    (n.usb, n.bluetooth) = (false, true);
+    assert_eq!(super::nearby_detail(&n).as_ref(), "Linux · Bluetooth");
+    (n.bluetooth, n.addr) = (false, None);
     assert_eq!(super::nearby_detail(&n).as_ref(), "Linux");
   }
 
