@@ -15,6 +15,7 @@ pub trait Backend: Send + Sync + 'static {
   fn unpair(&self, id: &str) -> Result<()>;
   fn settings(&self) -> Result<AppSettings>;
   fn set_discovery(&self, on: bool) -> Result<()>;
+  fn set_usb(&self, on: bool) -> Result<()>;
   /// Live camera scan for an `aurora://pair` QR code. `None` when cancelled.
   fn scan_qr(&self) -> Result<Option<String>> {
     anyhow::bail!("QR scanning is only available in the mobile app")
@@ -71,6 +72,9 @@ mod daemon {
     }
     fn set_discovery(&self, on: bool) -> Result<()> {
       ipc::send::<cmd::SettingsSetDiscovery>(on)
+    }
+    fn set_usb(&self, on: bool) -> Result<()> {
+      ipc::send::<cmd::SettingsSetUsb>(on)
     }
 
     fn events(&self) -> Box<dyn Iterator<Item = Event> + Send> {

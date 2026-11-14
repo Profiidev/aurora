@@ -39,6 +39,7 @@ impl FakeBackend {
       settings: AppSettings {
         name: "test".into(),
         discovery: false,
+        usb: Some(true),
       },
       calls: Vec::new(),
       connect_error: None,
@@ -106,6 +107,7 @@ pub fn nearby(name: &str) -> Nearby {
     os: "Linux".into(),
     addr: Some("10.0.0.3:4000".parse().unwrap()),
     link: info().link,
+    usb: false,
   }
 }
 
@@ -155,6 +157,10 @@ impl Backend for FakeBackend {
   }
   fn set_discovery(&self, on: bool) -> Result<()> {
     self.log(format!("set_discovery {on}")).settings.discovery = on;
+    Ok(())
+  }
+  fn set_usb(&self, on: bool) -> Result<()> {
+    self.log(format!("set_usb {on}")).settings.usb = Some(on);
     Ok(())
   }
   fn events(&self) -> Box<dyn Iterator<Item = Event> + Send> {

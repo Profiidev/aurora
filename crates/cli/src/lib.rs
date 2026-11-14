@@ -94,7 +94,11 @@ impl Pair {
       }
       Pair::Nearby => {
         for n in ipc::send::<cmd::PairNearby>(())? {
-          let addr = n.addr.map(|a| a.ip().to_string()).unwrap_or_default();
+          let addr = match n.addr {
+            _ if n.usb => "USB".into(),
+            Some(a) => a.ip().to_string(),
+            None => String::new(),
+          };
           println!("{}  {}  {addr}\n  {}", n.name, n.os, n.link);
         }
         Ok(())

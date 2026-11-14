@@ -46,12 +46,21 @@ command!(SettingsGet, "settings:get", () => AppSettings, |_p, e| {
   Ok(AppSettings {
     name: s.name,
     discovery: s.discovery,
+    usb: Some(s.usb),
   })
 });
 command!(SettingsSetDiscovery, "settings:set_discovery", bool => (), |p, e| {
   crate::config::set_discovery(&crate::config::state_dir(), p)?;
   let mut s = e.settings();
   s.discovery = p;
+  e.set_settings(s);
+  Ok(())
+});
+
+command!(SettingsSetUsb, "settings:set_usb", bool => (), |p, e| {
+  crate::config::set_usb(&crate::config::state_dir(), p)?;
+  let mut s = e.settings();
+  s.usb = p;
   e.set_settings(s);
   Ok(())
 });
@@ -97,5 +106,6 @@ pub fn register_all(registry: &mut IpcRegistry) {
     .register::<DevicesUnpair>()
     .register::<SettingsGet>()
     .register::<SettingsSetDiscovery>()
+    .register::<SettingsSetUsb>()
     .register_stream::<Events>();
 }

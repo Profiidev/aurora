@@ -36,3 +36,4 @@ url.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+aurora_transport = { workspace = true, features = ["iroh"] }

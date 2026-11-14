@@ -52,7 +52,7 @@ pub enum PairState {
   Confirm(Confirm),
 }
 
-/// A device mDNS found on the local network
+/// An unpaired device found by mDNS or at the other end of a USB cable
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Nearby {
   pub name: String,
@@ -60,6 +60,9 @@ pub struct Nearby {
   pub addr: Option<SocketAddr>,
   /// Pass to `pair:connect`
   pub link: String,
+  /// Found over a USB cable
+  #[serde(default)]
+  pub usb: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -81,4 +84,7 @@ pub enum Event {
 pub struct AppSettings {
   pub name: String,
   pub discovery: bool,
+  /// USB connections; `None` where the platform has none (iOS)
+  #[serde(default)]
+  pub usb: Option<bool>,
 }

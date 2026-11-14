@@ -22,6 +22,7 @@ pub struct Config {
   pub device: DeviceConfig,
   pub pairing: PairingConfig,
   pub network: NetworkConfig,
+  pub transport: TransportConfig,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -47,6 +48,19 @@ pub struct NetworkConfig {
   /// Find paired devices through n0's DNS and relays, also off this network.
   /// Read at startup only.
   pub relay: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TransportConfig {
+  /// Connect to phones over USB (Android accessory mode)
+  pub usb: bool,
+}
+
+impl Default for TransportConfig {
+  fn default() -> Self {
+    Self { usb: true }
+  }
 }
 
 impl Default for NetworkConfig {
@@ -76,6 +90,7 @@ impl Config {
       discovery: self.pairing.discovery,
       port: self.network.port,
       relay: self.network.relay,
+      usb: self.transport.usb,
     }
   }
 }
@@ -124,12 +139,20 @@ pub fn update_state(dir: &Path, edit: impl FnOnce(&mut toml::Table)) -> Result<(
 }
 
 pub fn set_discovery(dir: &Path, enabled: bool) -> Result<()> {
+  set_flag(dir, "pairing", "discovery", enabled)
+}
+
+pub fn set_usb(dir: &Path, enabled: bool) -> Result<()> {
+  set_flag(dir, "transport", "usb", enabled)
+}
+
+fn set_flag(dir: &Path, section: &str, key: &str, value: bool) -> Result<()> {
   update_state(dir, |table| {
-    let pairing = table
-      .entry("pairing")
+    let section = table
+      .entry(section)
       .or_insert_with(|| toml::Value::Table(Default::default()));
-    if let Some(pairing) = pairing.as_table_mut() {
-      pairing.insert("discovery".into(), enabled.into());
+    if let Some(section) = section.as_table_mut() {
+      section.insert(key.into(), value.into());
     }
   })
 }
