@@ -47,6 +47,8 @@ impl EngineBackend {
     let engine = rt.block_on(Engine::start(settings, dir))?;
     #[cfg(target_os = "android")]
     crate::usb::spawn(rt.handle().clone(), engine.clone());
+    #[cfg(target_os = "android")]
+    crate::bluetooth::spawn(rt.handle().clone(), engine.clone());
     Ok(Self {
       rt,
       engine,

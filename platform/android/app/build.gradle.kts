@@ -31,7 +31,7 @@ android {
 
     defaultConfig {
         applicationId = "io.profidev.aurora"
-        minSdk = 30          // Wear OS 3.0+ and modern Android baseline
+        minSdk = 31          // Android 12: Bluetooth scanning without the location permission
         targetSdk = 34
         versionCode = vMajor * 10000 + vMinor * 100 + vPatch
         versionName = cargoVersion

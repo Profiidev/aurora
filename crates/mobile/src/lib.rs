@@ -4,6 +4,8 @@ extern crate gpui_mobile;
 
 mod backend;
 #[cfg(target_os = "android")]
+mod bluetooth;
+#[cfg(target_os = "android")]
 mod multicast;
 pub mod platform;
 #[cfg(target_os = "android")]

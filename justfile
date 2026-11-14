@@ -24,7 +24,7 @@ android abi="x86_64":
     fi
     echo "using $ANDROID_SERIAL"
     rm -rf {{jni}}
-    cargo ndk -t {{abi}} -P 30 -o {{jni}} build -p aurora_mobile --lib
+    cargo ndk -t {{abi}} -P 31 -o {{jni}} build -p aurora_mobile --lib
     # cargo-ndk also copies dependencies built as cdylib (gpui_mobile, iroh);
     # libaurora.so links them statically
     find {{jni}} -name '*.so' ! -name libaurora.so -delete
@@ -40,7 +40,7 @@ android abi="x86_64":
 # Release APK + AAB for all ABIs, signed when platform/android/keystore.properties exists
 android-release:
     rm -rf {{jni}}
-    cargo ndk {{abis}} -P 30 -o {{jni}} build -p aurora_mobile --lib --release
+    cargo ndk {{abis}} -P 31 -o {{jni}} build -p aurora_mobile --lib --release
     # cargo-ndk also copies dependencies built as cdylib (gpui_mobile, iroh);
     # libaurora.so links them statically
     find {{jni}} -name '*.so' ! -name libaurora.so -delete
