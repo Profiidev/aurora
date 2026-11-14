@@ -196,3 +196,53 @@ async fn next_hello<R: tokio::io::AsyncRead + Unpin>(
     }
   }
 }
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn accessory_follows_a_new_host_on_the_same_cable() {
+  use std::os::{fd::OwnedFd, unix::net::UnixStream};
+
+  use aurora_transport::link::frame;
+
+  let phone = node().await;
+  let (phone_end, host_end) = UnixStream::pair().unwrap();
+  let links = phone.links().clone();
+  let done = tokio::spawn(async move {
+    aurora_transport::usb::attach_fd(&links, OwnedFd::from(phone_end)).await
+  });
+  host_end.set_nonblocking(true).unwrap();
+  let (hr, mut hw) = tokio::net::UnixStream::from_std(host_end)
+    .unwrap()
+    .into_split();
+  let mut hr = frame::FrameReader::new(hr);
+
+  let (old, new): (aurora_proto::Id, aurora_proto::Id) = ([1; 32], [2; 32]);
+  frame::write_hello(&mut hw, &old, true).await.unwrap();
+  wait_for("old host", || phone.links().is_linked(&old)).await;
+
+  // a different daemon takes over the cable; it repeats its hello until
+  // answered, like the real host does
+  let answered = async {
+    loop {
+      frame::write_hello(&mut hw, &new, true).await.unwrap();
+      let got = tokio::time::timeout(Duration::from_millis(500), next_hello(&mut hr)).await;
+      if let Ok((id, false)) = got {
+        assert_eq!(id, phone.id());
+        return;
+      }
+    }
+  };
+  tokio::time::timeout(Duration::from_secs(10), answered)
+    .await
+    .expect("phone answers the new host");
+  wait_for("new host", || phone.links().is_linked(&new)).await;
+  assert!(!phone.links().is_linked(&old));
+
+  // unplugged: the fd threads end and attach_fd returns
+  drop((hr, hw));
+  tokio::time::timeout(Duration::from_secs(5), done)
+    .await
+    .expect("attach_fd ends with the cable")
+    .unwrap()
+    .unwrap();
+}
