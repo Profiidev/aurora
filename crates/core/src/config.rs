@@ -24,6 +24,7 @@ pub struct Config {
   pub network: NetworkConfig,
   pub transport: TransportConfig,
   pub mobile: MobileConfig,
+  pub update: UpdateConfig,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -66,6 +67,14 @@ pub struct TransportConfig {
 pub struct MobileConfig {
   /// Keep the engine running when the app is closed, and start it on boot
   pub background: bool,
+}
+
+/// Desktop GUI only: self update of the deb and AppImage
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct UpdateConfig {
+  /// Install new releases on startup without asking
+  pub auto: bool,
 }
 
 impl Default for MobileConfig {
@@ -179,6 +188,10 @@ pub fn set_background(dir: &Path, enabled: bool) -> Result<()> {
 
 pub fn set_bluetooth(dir: &Path, enabled: bool) -> Result<()> {
   set_flag(dir, "transport", "bluetooth", enabled)
+}
+
+pub fn set_auto_update(dir: &Path, enabled: bool) -> Result<()> {
+  set_flag(dir, "update", "auto", enabled)
 }
 
 fn set_flag(dir: &Path, section: &str, key: &str, value: bool) -> Result<()> {
@@ -391,5 +404,21 @@ mod tests {
       .unwrap()
       .config;
     assert!(config.pairing.discovery);
+  }
+
+  #[test]
+  fn auto_update_is_off_until_saved() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("settings.toml");
+    let read = || {
+      read_from(&dir.path().join("config"), &file, std::iter::empty())
+        .unwrap()
+        .config
+        .update
+        .auto
+    };
+    assert!(!read());
+    set_auto_update(dir.path(), true).unwrap();
+    assert!(read());
   }
 }

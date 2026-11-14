@@ -48,7 +48,7 @@ in
 
   android = {
     enable = true;
-    platforms.version = [ "34" ];
+    platforms.version = [ "36" ];
     buildTools.version = [ "36.0.0" ];
     ndk.enable = true;
   };

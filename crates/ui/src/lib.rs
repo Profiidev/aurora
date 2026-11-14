@@ -4,6 +4,8 @@ mod desktop;
 mod mobile;
 #[cfg(test)]
 mod test_support;
+#[cfg(target_os = "linux")]
+pub mod updater;
 mod widgets;
 
 use std::sync::Arc;
@@ -72,7 +74,9 @@ pub fn open_root(cx: &mut App, backend: Arc<dyn Backend>, platform: Platform) {
 /// Desktop entry point (Linux, macOS, Windows): talks to `aurorad`.
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub fn run_desktop() {
-  gpui_kit::application()
-    .with_assets(AppAssets)
-    .run(|cx| open_root(cx, Arc::new(DaemonBackend), Platform::Desktop));
+  gpui_kit::application().with_assets(AppAssets).run(|cx| {
+    #[cfg(target_os = "linux")]
+    updater::init(cx);
+    open_root(cx, Arc::new(DaemonBackend), Platform::Desktop)
+  });
 }

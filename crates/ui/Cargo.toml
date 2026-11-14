@@ -16,5 +16,13 @@ anyhow.workspace = true
 flume.workspace = true
 qrcode.workspace = true
 
+# desktop self update; aurorad is Linux only
+[target.'cfg(target_os = "linux")'.dependencies]
+cargo-packager-updater.workspace = true
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+base64.workspace = true
+serde_json.workspace = true
+
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

@@ -27,12 +27,12 @@ val keystoreProperties = Properties().apply {
 
 android {
     namespace = "io.profidev.aurora"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "io.profidev.aurora"
         minSdk = 31          // Android 12: Bluetooth scanning without the location permission
-        targetSdk = 34
+        targetSdk = 36
         versionCode = vMajor * 10000 + vMinor * 100 + vPatch
         versionName = cargoVersion
 

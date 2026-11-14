@@ -50,6 +50,16 @@ jobs:
 
       # aurora-gui, aurorad and aurora ship together in each package
       - name: Build app
+        if: github.event_name == 'pull_request'
+        run: cargo packager --release -f deb,appimage
+
+      # signed with proton's updater key, crates/ui/src/updater.rs holds the public half
+      - name: Build and sign app
+        if: github.event_name != 'pull_request'
+        env:
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          # empty when the key has no password, an empty value skips the password prompt
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: cargo packager --release -f deb,appimage
 
       - name: Upload to the release
@@ -57,7 +67,22 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.release.tag_name }}
+          NOTES: ${{ github.event.release.body }}
         run: |
           set -euo pipefail
           cd "$OUT_DIR"
-          gh release upload "$TAG" *.deb *.AppImage --clobber
+          appimage=$(ls *.AppImage)
+          deb=$(ls *.deb)
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+          # latest.json for cargo-packager-updater. It has no deb format and rejects unknown
+          # ones, so the deb entry is tagged appimage; deb installs read `linux-x86_64-deb` and
+          # install the verified bytes with `pkexec dpkg -i` (crates/ui/src/updater.rs)
+          jq -n --arg version "${TAG#v}" --arg notes "$NOTES" --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg appimage "$base/$appimage" --arg appimage_sig "$(cat "$appimage.sig")" \
+            --arg deb "$base/$deb" --arg deb_sig "$(cat "$deb.sig")" \
+            '{version: $version, notes: $notes, pub_date: $date, platforms: {
+              "linux-x86_64": {url: $appimage, signature: $appimage_sig, format: "appimage"},
+              "linux-x86_64-deb": {url: $deb, signature: $deb_sig, format: "appimage"}
+            }}' > latest.json
+          cat latest.json
+          gh release upload "$TAG" "$appimage" "$deb" *.sig latest.json --clobber
