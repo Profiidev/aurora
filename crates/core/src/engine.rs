@@ -480,10 +480,7 @@ impl Engine {
       code,
       peer_name: peer.name.clone(),
       peer_os: peer.os.clone(),
-      via: match peer.via {
-        Via::Direct(a) => format!("Direct · {}", a.ip()),
-        Via::Relay => "Relay".into(),
-      },
+      via: peer.via.to_string(),
       fingerprint: hex(&peer.id[..8])
         .as_bytes()
         .chunks(4)
@@ -788,7 +785,7 @@ impl Engine {
     let mut seen = self.node.seen();
     loop {
       match seen.recv().await {
-        Ok(Seen::Found { id, addrs }) => {
+        Ok(Seen::Found { id, addrs, .. }) => {
           if self.nearby.lock().unwrap().contains_key(&id) {
             continue;
           }

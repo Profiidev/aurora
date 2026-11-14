@@ -15,7 +15,7 @@ path = "src/main.rs"
 [dependencies]
 aurora_core.workspace = true
 aurora_proto.workspace = true
-aurora_transport = { workspace = true, features = ["iroh", "bluer", "nusb"] }
+aurora_transport = { workspace = true, features = ["iroh", "nusb"] }
 anyhow.workspace = true
 tokio = { workspace = true, features = ["signal"] }
 tracing.workspace = true

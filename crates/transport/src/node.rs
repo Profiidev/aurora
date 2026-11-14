@@ -1,26 +1,27 @@
+//! The iroh endpoint every transport runs under.
+
 use std::{
   net::{Ipv4Addr, SocketAddr},
   path::Path,
-  sync::{Arc, Mutex},
+  sync::Arc,
 };
 
 use anyhow::{Result, anyhow};
 use aurora_proto::{ALPN, Id};
 use iroh::{
   Endpoint, EndpointAddr, EndpointId, RelayUrl, SecretKey, TransportAddr,
-  address_lookup::{AddressLookup, EndpointData, Error as LookupError, Item},
   endpoint::{Connection as IrohConn, RecvStream as IrohRecv, SendStream as IrohSend, presets},
 };
-use iroh_mdns_address_lookup::{DiscoveryEvent, MdnsAddressLookup};
-use n0_future::{StreamExt, boxed::BoxStream};
 use tokio::sync::broadcast;
+
+use crate::{
+  link::{LinkEvent, LinkKind, Links},
+  mdns::Mdns,
+};
 
 pub type Connection = IrohConn;
 pub type SendStream = IrohSend;
 pub type RecvStream = IrohRecv;
-
-/// mDNS service name, so only Aurora endpoints show up
-const SERVICE: &str = "aurora";
 
 /// Reads the endpoint key from `path`, generating it (mode 0600) on first use
 pub fn load_or_create_key(path: &Path) -> Result<SecretKey> {
@@ -60,85 +61,46 @@ pub struct Hints {
 pub enum Via {
   Direct(SocketAddr),
   Relay,
+  Link(LinkKind),
 }
 
-/// A device seen on the local network by mDNS
+impl std::fmt::Display for Via {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Via::Direct(a) => write!(f, "Direct · {}", a.ip()),
+      Via::Relay => f.write_str("Relay"),
+      Via::Link(LinkKind::Usb) => f.write_str("USB"),
+      Via::Link(LinkKind::Bluetooth) => f.write_str("Bluetooth"),
+    }
+  }
+}
+
+/// A device found nearby: by mDNS on the local network, or at the other end
+/// of a link
 #[derive(Debug, Clone, PartialEq)]
 pub enum Seen {
-  Found { id: Id, addrs: Vec<SocketAddr> },
+  Found {
+    id: Id,
+    addrs: Vec<SocketAddr>,
+    via: Via,
+  },
   Gone(Id),
 }
 
-/// mDNS that can be switched on and off while the endpoint runs; iroh has no
-/// way to remove an address lookup again
-#[derive(Debug)]
-struct Mdns {
-  id: EndpointId,
-  inner: Mutex<Option<MdnsAddressLookup>>,
-  /// What we published last, handed to a freshly enabled service
-  data: Mutex<Option<EndpointData>>,
-  seen: broadcast::Sender<Seen>,
-}
-
-impl Mdns {
-  fn set_enabled(&self, on: bool) -> Result<()> {
-    let mut inner = self.inner.lock().unwrap();
-    if on == inner.is_some() {
-      return Ok(());
-    }
-    if !on {
-      *inner = None;
-      return Ok(());
-    }
-    let mdns = MdnsAddressLookup::builder()
-      .service_name(SERVICE)
-      .build(self.id)
-      .map_err(|e| anyhow!("mDNS: {e}"))?;
-    if let Some(data) = &*self.data.lock().unwrap() {
-      mdns.publish(data);
-    }
-    let (me, tx, events) = (self.id, self.seen.clone(), mdns.clone());
-    tokio::spawn(async move {
-      // ends when the service is dropped
-      let mut stream = events.subscribe().await;
-      while let Some(event) = stream.next().await {
-        let seen = match event {
-          DiscoveryEvent::Discovered { endpoint_info, .. } if endpoint_info.endpoint_id != me => {
-            Seen::Found {
-              id: *endpoint_info.endpoint_id.as_bytes(),
-              addrs: endpoint_info.ip_addrs().copied().collect(),
-            }
-          }
-          DiscoveryEvent::Expired { endpoint_id } => Seen::Gone(*endpoint_id.as_bytes()),
-          _ => continue,
-        };
-        let _ = tx.send(seen);
-      }
-    });
-    *inner = Some(mdns);
-    Ok(())
-  }
-}
-
-impl AddressLookup for Mdns {
-  fn publish(&self, data: &EndpointData) {
-    *self.data.lock().unwrap() = Some(data.clone());
-    if let Some(mdns) = &*self.inner.lock().unwrap() {
-      mdns.publish(data);
-    }
-  }
-
-  fn resolve(&self, id: EndpointId) -> Option<BoxStream<Result<Item, LookupError>>> {
-    self.inner.lock().unwrap().as_ref()?.resolve(id)
-  }
-}
-
-/// An iroh endpoint: n0's DNS lookup and relays when `relay` is set, plus mDNS
-/// on the local network while discovery is on
+/// Two iroh endpoints under one key. The network one: n0's DNS lookup and
+/// relays when `relay` is set, mDNS on the local network while discovery is
+/// on. The link one: only point-to-point links. iroh 1.4 never opens a link
+/// path on a connection once it knows the peer over IP, so a device keeps one
+/// connection per endpoint and the caller prefers the link one.
 #[derive(Clone)]
 pub struct Node {
   ep: Endpoint,
+  link_ep: Endpoint,
   mdns: Arc<Mdns>,
+  links: Links,
+  seen: broadcast::Sender<Seen>,
+  #[cfg(feature = "nusb")]
+  usb: crate::usb::UsbHost,
 }
 
 impl Node {
@@ -148,20 +110,35 @@ impl Node {
     } else {
       Endpoint::builder(presets::Minimal)
     };
-    let mdns = Arc::new(Mdns {
-      id: key.public(),
-      inner: Mutex::new(None),
-      data: Mutex::new(None),
-      seen: broadcast::channel(64).0,
-    });
+    let seen = broadcast::channel(64).0;
+    let mdns = Arc::new(Mdns::new(key.public(), seen.clone()));
+    let links = Links::new(*key.public().as_bytes());
     let ep = builder
-      .secret_key(key)
+      .secret_key(key.clone())
       .alpns(vec![ALPN.to_vec()])
       .bind_addr((Ipv4Addr::UNSPECIFIED, port.unwrap_or(0)))?
       .bind()
       .await?;
     ep.address_lookup()?.add(mdns.clone());
-    Ok(Self { ep, mdns })
+    let link_ep = Endpoint::builder(presets::Minimal)
+      .secret_key(key)
+      .alpns(vec![ALPN.to_vec()])
+      .clear_ip_transports()
+      .clear_relay_transports()
+      .add_custom_transport(Arc::new(links.clone()))
+      .bind()
+      .await?;
+    link_ep.address_lookup()?.add(links.clone());
+    tokio::spawn(forward_links(links.events(), seen.clone()));
+    Ok(Self {
+      #[cfg(feature = "nusb")]
+      usb: crate::usb::UsbHost::new(links.clone()),
+      ep,
+      link_ep,
+      mdns,
+      links,
+      seen,
+    })
   }
 
   pub fn id(&self) -> Id {
@@ -196,9 +173,22 @@ impl Node {
     self.mdns.set_enabled(on)
   }
 
-  /// Devices mDNS finds or loses
+  /// Look for phones on USB (desktop); without the `nusb` feature a no-op,
+  /// the app attaches its accessory through [`Node::links`] instead
+  pub fn set_usb(&self, on: bool) {
+    #[cfg(feature = "nusb")]
+    self.usb.set_enabled(on);
+    #[cfg(not(feature = "nusb"))]
+    let _ = on;
+  }
+
+  pub fn links(&self) -> &Links {
+    &self.links
+  }
+
+  /// Devices found or lost by mDNS or links
   pub fn seen(&self) -> broadcast::Receiver<Seen> {
-    self.mdns.seen.subscribe()
+    self.seen.subscribe()
   }
 
   /// Dials `id`; `hints` may be empty, the lookups find the device then
@@ -212,15 +202,56 @@ impl Node {
     Ok(self.ep.connect(addr, ALPN).await?)
   }
 
-  /// Next incoming connection, `None` once the node is closed
+  /// Dials `id` over a running link; the connection ends with the link
+  pub async fn connect_link(&self, id: Id) -> Result<Connection> {
+    if !self.links.is_linked(&id) {
+      anyhow::bail!("no link to that device");
+    }
+    let id = EndpointId::from_bytes(&id)?;
+    Ok(self.link_ep.connect(id, ALPN).await?)
+  }
+
+  /// Over a link when there is one, else over the network
+  pub async fn dial(&self, id: Id, hints: &Hints) -> Result<Connection> {
+    if self.links.is_linked(&id) {
+      self.connect_link(id).await
+    } else {
+      self.connect(id, hints).await
+    }
+  }
+
+  /// Next incoming connection on either endpoint, `None` once the node is
+  /// closed
   pub async fn accept(&self) -> Option<Result<Connection>> {
-    let incoming = self.ep.accept().await?;
+    let incoming = tokio::select! {
+      i = self.ep.accept() => i?,
+      i = self.link_ep.accept() => i?,
+    };
     Some(async { Ok(incoming.accept()?.await?) }.await)
   }
 
   pub async fn close(&self) {
     self.mdns.set_enabled(false).ok();
-    self.ep.close().await;
+    self.set_usb(false);
+    tokio::join!(self.ep.close(), self.link_ep.close());
+  }
+}
+
+async fn forward_links(mut events: broadcast::Receiver<LinkEvent>, seen: broadcast::Sender<Seen>) {
+  loop {
+    let event = match events.recv().await {
+      Ok(e) => e,
+      Err(broadcast::error::RecvError::Lagged(_)) => continue,
+      Err(broadcast::error::RecvError::Closed) => break,
+    };
+    let _ = seen.send(match event {
+      LinkEvent::Up { kind, peer } => Seen::Found {
+        id: peer,
+        addrs: Vec::new(),
+        via: Via::Link(kind),
+      },
+      LinkEvent::Down { peer, .. } => Seen::Gone(peer),
+    });
   }
 }
 
@@ -238,6 +269,9 @@ pub fn via(conn: &Connection) -> Via {
     .map(|p| p.remote_addr().clone())
   {
     Some(TransportAddr::Ip(a)) => Via::Direct(a),
+    Some(TransportAddr::Custom(c)) => {
+      LinkKind::from_transport_id(c.id()).map_or(Via::Relay, Via::Link)
+    }
     _ => Via::Relay,
   }
 }

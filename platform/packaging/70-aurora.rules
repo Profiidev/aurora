@@ -1,2 +1,26 @@
-# Android Open Accessory mode (Google vendor id), used by the USB transport.
+# Aurora USB transport: lets the logged-in user switch phones to Android Open
+# Accessory mode and talk to them. Vendor list = ANDROID_VENDORS in
+# crates/transport/src/usb/host.rs.
+
+# Android Open Accessory mode (Google vendor id)
 SUBSYSTEM=="usb", ATTR{idVendor}=="18d1", ATTR{idProduct}=="2d0[0-5]", TAG+="uaccess"
+
+# Phones before the switch
+SUBSYSTEM=="usb", ATTR{idVendor}=="18d1", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="04e8", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="2717", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="2a70", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="22b8", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="12d1", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="0bb4", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="1004", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="0fce", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="2ae5", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="22d9", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="2d95", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="19d2", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="17ef", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="0b05", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="1949", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="05c6", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="0e8d", TAG+="uaccess"
