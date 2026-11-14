@@ -56,6 +56,12 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
+    <!-- Background engine: a foreground service, started again after boot -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <!-- Bluetooth LE fallback: find the computer, open an L2CAP channel -->
     <uses-permission
         android:name="android.permission.BLUETOOTH_SCAN"
@@ -155,6 +161,22 @@
             </intent-filter>
             -->
         </activity>
+        <!-- The engine, in its own process: the app UI talks to it over IPC -->
+        <service
+            android:name="dev.gpui.mobile.AuroraService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice"
+            android:process=":engine"
+        />
+        <receiver
+            android:name="dev.gpui.mobile.AuroraBootReceiver"
+            android:exported="true"
+        >
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
         <activity
             android:name="dev.gpui.mobile.GpuiPathPicker"
             android:exported="false"

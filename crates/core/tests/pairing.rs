@@ -19,6 +19,7 @@ fn settings(name: &str) -> Settings {
     relay: false,
     usb: false,
     bluetooth: false,
+    background: None,
   }
 }
 

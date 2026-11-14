@@ -140,7 +140,13 @@ public class GpuiActivity extends GpuiInputActivity {
     protected void onDestroy() {
         // Release media session when activity is destroyed.
         GpuiMediaSession.release();
+        if (!AuroraService.background) {
+            AuroraService.stop(this);
+        }
         super.onDestroy();
+        // gpui cannot start a second app in this process; the next open gets
+        // a fresh one (the engine lives on in the ":engine" process)
+        android.os.Process.killProcess(android.os.Process.myPid());
     }
 
     /**

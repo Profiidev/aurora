@@ -185,6 +185,7 @@ mod tests {
       relay: false,
       usb: false,
       bluetooth: true,
+      background: None,
     };
     let engine = rt.block_on(Engine::start(settings, dir.path())).unwrap();
     init(rt.handle().clone(), engine.clone());

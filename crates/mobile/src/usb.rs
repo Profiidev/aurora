@@ -9,9 +9,9 @@ use std::{
 };
 
 use aurora_core::engine::Engine;
-use gpui_mobile::android::jni as h;
-use jni::objects::JValue;
 use tokio::runtime::Handle;
+
+use crate::jvm;
 
 const CLASS: &str = "dev.gpui.mobile.AuroraUsb";
 const POLL: Duration = Duration::from_secs(1);
@@ -62,21 +62,16 @@ pub fn spawn(rt: Handle, engine: Arc<Engine>) {
 
 /// An Aurora accessory is still plugged in
 fn attached() -> bool {
-  h::with_env(|env| {
-    let activity = h::activity(env)?;
-    let cls = h::find_app_class(env, CLASS)?;
-    env
-      .call_static_method(
-        &cls,
-        jni::jni_str!("attached"),
-        jni::jni_sig!("(Landroid/app/Activity;)Z"),
-        &[JValue::Object(&activity)],
-      )
-      .and_then(|v| v.z())
-      .map_err(|e| {
-        env.exception_clear();
-        e.to_string()
-      })
+  jvm::with_env(|env| {
+    jvm::call_with_context(
+      env,
+      CLASS,
+      jni::jni_str!("attached"),
+      jni::jni_sig!("(Landroid/content/Context;)Z"),
+      &[],
+    )?
+    .z()
+    .map_err(|e| jvm::call_err(env, e))
   })
   // a JNI hiccup is no reason to drop a working link
   .unwrap_or(true)
@@ -84,21 +79,16 @@ fn attached() -> bool {
 
 /// The accessory's fd, `None` while there is none or permission is pending
 fn open() -> Result<Option<OwnedFd>, String> {
-  let fd = h::with_env(|env| {
-    let activity = h::activity(env)?;
-    let cls = h::find_app_class(env, CLASS)?;
-    env
-      .call_static_method(
-        &cls,
-        jni::jni_str!("open"),
-        jni::jni_sig!("(Landroid/app/Activity;)I"),
-        &[JValue::Object(&activity)],
-      )
-      .and_then(|v| v.i())
-      .map_err(|e| {
-        env.exception_clear();
-        e.to_string()
-      })
+  let fd = jvm::with_env(|env| {
+    jvm::call_with_context(
+      env,
+      CLASS,
+      jni::jni_str!("open"),
+      jni::jni_sig!("(Landroid/content/Context;)I"),
+      &[],
+    )?
+    .i()
+    .map_err(|e| jvm::call_err(env, e))
   })?;
   // SAFETY: `detachFd` hands us sole ownership of a valid descriptor
   Ok((fd >= 0).then(|| unsafe { OwnedFd::from_raw_fd(fd) }))

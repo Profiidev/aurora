@@ -8,10 +8,16 @@ mod bluetooth;
 #[cfg(any(target_os = "ios", test))]
 mod bluetooth_ios;
 #[cfg(target_os = "android")]
+mod client;
+#[cfg(target_os = "android")]
+mod jvm;
+#[cfg(target_os = "android")]
 mod multicast;
 pub mod platform;
 #[cfg(target_os = "android")]
 mod scanner;
+#[cfg(target_os = "android")]
+mod service;
 #[cfg(target_os = "android")]
 mod usb;
 
@@ -57,18 +63,14 @@ fn android_main(app: android_activity::AndroidApp) {
     log::error!("shared_platform() returned None");
     return;
   };
-  let Some(dir) = app.internal_data_path() else {
-    log::error!("no internal data path");
-    return;
+  // the engine runs in the ":engine" service process; this one is its UI
+  let backend: std::sync::Arc<dyn aurora_ui::Backend> = match client::start() {
+    Ok(b) => std::sync::Arc::new(b),
+    Err(e) => {
+      log::error!("cannot reach the engine: {e}");
+      return;
+    }
   };
-  let backend: std::sync::Arc<dyn aurora_ui::Backend> =
-    match backend::EngineBackend::start(&dir, backend::device_name(), "Android") {
-      Ok(b) => std::sync::Arc::new(b),
-      Err(e) => {
-        log::error!("cannot start engine: {e:#}");
-        return;
-      }
-    };
   // Blocks on the Android event loop; callback runs once the surface exists.
   gpui::Application::with_platform(shared.into_rc())
     .with_assets(aurora_ui::AppAssets)

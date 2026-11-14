@@ -17,6 +17,8 @@ pub trait Backend: Send + Sync + 'static {
   fn set_discovery(&self, on: bool) -> Result<()>;
   fn set_usb(&self, on: bool) -> Result<()>;
   fn set_bluetooth(&self, on: bool) -> Result<()>;
+  /// Phone only: keep the engine running when the app is closed
+  fn set_background(&self, on: bool) -> Result<()>;
   /// Tells the engine a window is open, for as long as the process lives;
   /// Bluetooth only runs while someone looks
   fn hold_presence(&self) {}
@@ -29,10 +31,12 @@ pub trait Backend: Send + Sync + 'static {
   fn events(&self) -> Box<dyn Iterator<Item = Event> + Send>;
 }
 
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+/// Talks to an engine in another process: `aurorad` on the desktop, the
+/// engine service on Android
+#[cfg(not(target_os = "ios"))]
 pub use daemon::DaemonBackend;
 
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+#[cfg(not(target_os = "ios"))]
 mod daemon {
   use std::{thread::sleep, time::Duration};
 
@@ -82,6 +86,9 @@ mod daemon {
     }
     fn set_bluetooth(&self, on: bool) -> Result<()> {
       ipc::send::<cmd::SettingsSetBluetooth>(on)
+    }
+    fn set_background(&self, on: bool) -> Result<()> {
+      ipc::send::<cmd::SettingsSetBackground>(on)
     }
     fn hold_presence(&self) {
       std::thread::spawn(|| {

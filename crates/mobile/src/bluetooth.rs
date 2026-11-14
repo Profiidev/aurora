@@ -9,13 +9,15 @@ use std::{
   time::Duration,
 };
 
-use aurora_core::engine::{Engine, PresenceGuard};
+use aurora_core::engine::Engine;
 use aurora_transport::{
   LinkKind,
   bluetooth::decode_advert,
   link::chan::{self, PipeEnds},
 };
 use gpui_mobile::android::jni as h;
+
+use crate::jvm;
 use jni::objects::{JByteArray, JObject, JValue};
 use tokio::runtime::Handle;
 
@@ -27,27 +29,16 @@ fn call_err(env: &mut jni::Env, e: jni::errors::Error) -> String {
   e.to_string()
 }
 
-fn foreground() -> bool {
-  h::with_env(|env| {
-    let cls = h::find_app_class(env, CLASS)?;
-    env
-      .call_static_method(&cls, jni::jni_str!("foreground"), jni::jni_sig!("()Z"), &[])
-      .and_then(|v| v.z())
-      .map_err(|e| call_err(env, e))
-  })
-  .unwrap_or(false)
-}
-
-/// A static `(Landroid/app/Activity;)Z` method
-fn activity_flag(name: &'static jni::strings::JNIStr) -> bool {
-  h::with_env(|env| {
-    let activity = h::activity(env)?;
-    let cls = h::find_app_class(env, CLASS)?;
+/// A static `(Landroid/content/Context;)Z` method
+fn context_flag(name: &'static jni::strings::JNIStr) -> bool {
+  jvm::with_env(|env| {
+    let activity = jvm::context(env)?;
+    let cls = jvm::class(env, CLASS)?;
     env
       .call_static_method(
         &cls,
         name,
-        jni::jni_sig!("(Landroid/app/Activity;)Z"),
+        jni::jni_sig!("(Landroid/content/Context;)Z"),
         &[JValue::Object(&activity)],
       )
       .and_then(|v| v.z())
@@ -57,14 +48,14 @@ fn activity_flag(name: &'static jni::strings::JNIStr) -> bool {
 }
 
 fn scan(on: bool) {
-  let _ = h::with_env(|env| {
-    let activity = h::activity(env)?;
-    let cls = h::find_app_class(env, CLASS)?;
+  let _ = jvm::with_env(|env| {
+    let activity = jvm::context(env)?;
+    let cls = jvm::class(env, CLASS)?;
     env
       .call_static_method(
         &cls,
         jni::jni_str!("scan"),
-        jni::jni_sig!("(Landroid/app/Activity;Z)V"),
+        jni::jni_sig!("(Landroid/content/Context;Z)V"),
         &[JValue::Object(&activity), JValue::Bool(on)],
       )
       .map(|_| ())
@@ -74,8 +65,8 @@ fn scan(on: bool) {
 
 /// Next advert: device address and manufacturer data
 fn poll() -> Option<(String, Vec<u8>)> {
-  let line = h::with_env(|env| {
-    let cls = h::find_app_class(env, CLASS)?;
+  let line = jvm::with_env(|env| {
+    let cls = jvm::class(env, CLASS)?;
     let obj = env
       .call_static_method(
         &cls,
@@ -98,15 +89,15 @@ fn poll() -> Option<(String, Vec<u8>)> {
 
 /// Blocks while connecting; the channel's handle
 fn connect(addr: &str, psm: u16) -> Option<i32> {
-  h::with_env(|env| {
-    let activity = h::activity(env)?;
-    let cls = h::find_app_class(env, CLASS)?;
+  jvm::with_env(|env| {
+    let activity = jvm::context(env)?;
+    let cls = jvm::class(env, CLASS)?;
     let addr = env.new_string(addr).map_err(|e| call_err(env, e))?;
     env
       .call_static_method(
         &cls,
         jni::jni_str!("connect"),
-        jni::jni_sig!("(Landroid/app/Activity;Ljava/lang/String;I)I"),
+        jni::jni_sig!("(Landroid/content/Context;Ljava/lang/String;I)I"),
         &[
           JValue::Object(&activity),
           JValue::Object(&addr),
@@ -122,8 +113,8 @@ fn connect(addr: &str, psm: u16) -> Option<i32> {
 
 /// Blocks for the next bytes; `None` once the channel is closed
 fn read(handle: i32) -> Option<Vec<u8>> {
-  h::with_env(|env| {
-    let cls = h::find_app_class(env, CLASS)?;
+  jvm::with_env(|env| {
+    let cls = jvm::class(env, CLASS)?;
     let obj = env
       .call_static_method(
         &cls,
@@ -147,8 +138,8 @@ fn read(handle: i32) -> Option<Vec<u8>> {
 }
 
 fn write(handle: i32, data: &[u8]) -> bool {
-  h::with_env(|env| {
-    let cls = h::find_app_class(env, CLASS)?;
+  jvm::with_env(|env| {
+    let cls = jvm::class(env, CLASS)?;
     let array = env
       .byte_array_from_slice(data)
       .map_err(|e| call_err(env, e))?;
@@ -166,8 +157,8 @@ fn write(handle: i32, data: &[u8]) -> bool {
 }
 
 fn close(handle: i32) {
-  let _ = h::with_env(|env| {
-    let cls = h::find_app_class(env, CLASS)?;
+  let _ = jvm::with_env(|env| {
+    let cls = jvm::class(env, CLASS)?;
     env
       .call_static_method(
         &cls,
@@ -191,37 +182,25 @@ pub fn spawn(rt: Handle, engine: Arc<Engine>) {
 }
 
 fn run(rt: Handle, engine: Arc<Engine>) {
-  let mut presence: Option<PresenceGuard> = None;
-  let mut asked = false;
-  let mut granted = false;
   let mut scanning = false;
   // addresses being dialed or linked, and their channel handles
   let open: Arc<Mutex<HashSet<String>>> = Arc::default();
   let handles: Arc<Mutex<Vec<i32>>> = Arc::default();
   loop {
     sleep(TICK);
-    let fg = foreground();
-    // the phone engine counts as looked at while the app is on screen
-    match (fg, presence.is_some()) {
-      (true, false) => presence = Some(engine.ui_presence()),
-      (false, true) => presence = None,
-      _ => {}
-    }
-    let wanted = fg && engine.bluetooth_wanted() && activity_flag(jni::jni_str!("available"));
-    if wanted && !asked {
-      asked = true;
-      granted = activity_flag(jni::jni_str!("ensurePermissions"));
-      if !granted {
-        log::info!("Bluetooth permissions denied");
-      }
-    }
-    let scan_now = wanted && granted;
+    // the app UI holds `ui:present` while on screen; it also asks for the
+    // permissions, this process has no activity to show a dialog
+    let allowed = engine.bluetooth_allowed();
+    let scan_now = allowed
+      && engine.bluetooth_wanted()
+      && context_flag(jni::jni_str!("available"))
+      && context_flag(jni::jni_str!("granted"));
     if scan_now != scanning {
       scan(scan_now);
       scanning = scan_now;
     }
-    if !fg {
-      // in the background Bluetooth stops entirely
+    if !allowed {
+      // app off screen or switched off: Bluetooth stops entirely
       for handle in handles.lock().unwrap().drain(..) {
         close(handle);
       }

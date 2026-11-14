@@ -23,6 +23,7 @@ pub struct Config {
   pub pairing: PairingConfig,
   pub network: NetworkConfig,
   pub transport: TransportConfig,
+  pub mobile: MobileConfig,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -57,6 +58,20 @@ pub struct TransportConfig {
   pub usb: bool,
   /// Fall back to Bluetooth LE while the app is open and a device is offline
   pub bluetooth: bool,
+}
+
+/// Phone only
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MobileConfig {
+  /// Keep the engine running when the app is closed, and start it on boot
+  pub background: bool,
+}
+
+impl Default for MobileConfig {
+  fn default() -> Self {
+    Self { background: true }
+  }
 }
 
 impl Default for TransportConfig {
@@ -97,6 +112,8 @@ impl Config {
       relay: self.network.relay,
       usb: self.transport.usb,
       bluetooth: self.transport.bluetooth,
+      // the phone builds its own settings
+      background: None,
     }
   }
 }
@@ -125,6 +142,10 @@ pub fn config_dir() -> PathBuf {
 
 /// Where the daemon keeps its key, devices and settings
 pub fn state_dir() -> PathBuf {
+  // the phone keeps everything in its app files dir
+  if let Some(dir) = std::env::var_os("AURORA_STATE_DIR") {
+    return dir.into();
+  }
   (dirs::state_dir().or_else(dirs::data_local_dir))
     .unwrap_or_default()
     .join("aurora")
@@ -150,6 +171,10 @@ pub fn set_discovery(dir: &Path, enabled: bool) -> Result<()> {
 
 pub fn set_usb(dir: &Path, enabled: bool) -> Result<()> {
   set_flag(dir, "transport", "usb", enabled)
+}
+
+pub fn set_background(dir: &Path, enabled: bool) -> Result<()> {
+  set_flag(dir, "mobile", "background", enabled)
 }
 
 pub fn set_bluetooth(dir: &Path, enabled: bool) -> Result<()> {

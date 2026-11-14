@@ -1,6 +1,5 @@
 package dev.gpui.mobile;
 
-import android.app.Activity;
 import android.content.Context;
 import android.net.wifi.WifiManager;
 
@@ -10,9 +9,9 @@ public final class AuroraMulticast {
 
     private AuroraMulticast() {}
 
-    public static synchronized void set(Activity activity, boolean on) {
+    public static synchronized void set(Context context, boolean on) {
         if (on && lock == null) {
-            WifiManager wifi = (WifiManager) activity.getApplicationContext()
+            WifiManager wifi = (WifiManager) context.getApplicationContext()
                     .getSystemService(Context.WIFI_SERVICE);
             if (wifi == null) {
                 return;

@@ -49,21 +49,29 @@ public final class AuroraBluetooth {
         return foreground;
     }
 
-    private static BluetoothAdapter adapter(Activity activity) {
+    private static BluetoothAdapter adapter(Context activity) {
         BluetoothManager manager =
                 (BluetoothManager) activity.getSystemService(Context.BLUETOOTH_SERVICE);
         return manager == null ? null : manager.getAdapter();
     }
 
     /** An LE adapter exists and is switched on. */
-    public static boolean available(Activity activity) {
+    public static boolean available(Context activity) {
         BluetoothAdapter adapter = adapter(activity);
         return adapter != null
                 && adapter.isEnabled()
                 && activity.getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE);
     }
 
-    /** Asks for scan and connect permissions; blocks until answered. */
+    /** Scan and connect permissions are granted. */
+    public static boolean granted(Context context) {
+        return context.checkSelfPermission("android.permission.BLUETOOTH_SCAN")
+                        == PackageManager.PERMISSION_GRANTED
+                && context.checkSelfPermission("android.permission.BLUETOOTH_CONNECT")
+                        == PackageManager.PERMISSION_GRANTED;
+    }
+
+    /** Asks for scan and connect permissions (app UI only); blocks until answered. */
     public static boolean ensurePermissions(Activity activity) {
         String result = GpuiPermissions.requestPermissions(activity,
                 "android.permission.BLUETOOTH_SCAN|android.permission.BLUETOOTH_CONNECT");
@@ -77,7 +85,7 @@ public final class AuroraBluetooth {
     }
 
     /** Starts or stops scanning for Aurora desktops. */
-    public static synchronized void scan(Activity activity, boolean on) {
+    public static synchronized void scan(Context activity, boolean on) {
         try {
             if (on && callback == null) {
                 BluetoothAdapter adapter = adapter(activity);
@@ -118,7 +126,7 @@ public final class AuroraBluetooth {
     }
 
     /** Blocks until connected; a handle for read/write/close, or -1. */
-    public static int connect(Activity activity, String address, int psm) {
+    public static int connect(Context activity, String address, int psm) {
         BluetoothAdapter adapter = adapter(activity);
         if (adapter == null) {
             return -1;

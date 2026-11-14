@@ -14,8 +14,8 @@ use aurora_ui::Backend;
 use tokio::{runtime::Runtime, sync::broadcast::error::RecvError};
 
 pub struct EngineBackend {
-  rt: Runtime,
-  engine: Arc<Engine>,
+  pub(crate) rt: Runtime,
+  pub(crate) engine: Arc<Engine>,
   dir: std::path::PathBuf,
 }
 
@@ -42,9 +42,26 @@ impl EngineBackend {
       relay: true,
       usb: USB && loaded.config.transport.usb,
       bluetooth: loaded.config.transport.bluetooth,
+      background: BACKGROUND.then_some(loaded.config.mobile.background),
     };
     multicast(settings.discovery);
     let engine = rt.block_on(Engine::start(settings, dir))?;
+    #[cfg(target_os = "android")]
+    {
+      // the IPC client's settings changes reach the engine, not this backend
+      let engine = engine.clone();
+      std::thread::spawn(move || {
+        let mut on = engine.settings().discovery;
+        loop {
+          std::thread::sleep(std::time::Duration::from_secs(1));
+          let now = engine.settings().discovery;
+          if now != on {
+            multicast(now);
+            on = now;
+          }
+        }
+      });
+    }
     #[cfg(target_os = "android")]
     crate::usb::spawn(rt.handle().clone(), engine.clone());
     #[cfg(target_os = "android")]
@@ -103,7 +120,17 @@ impl Backend for EngineBackend {
       discovery: s.discovery,
       usb: USB.then_some(s.usb),
       bluetooth: Some(s.bluetooth),
+      background: s.background,
     })
+  }
+  fn set_background(&self, on: bool) -> Result<()> {
+    anyhow::ensure!(BACKGROUND, "only Android runs in the background");
+    config::set_background(&self.dir, on)?;
+    let _guard = self.rt.enter();
+    let mut s = self.engine.settings();
+    s.background = Some(on);
+    self.engine.set_settings(s);
+    Ok(())
   }
   fn set_bluetooth(&self, on: bool) -> Result<()> {
     config::set_bluetooth(&self.dir, on)?;
@@ -148,6 +175,9 @@ impl Backend for EngineBackend {
     }))
   }
 }
+
+/// Only Android keeps the engine running when the app is closed
+const BACKGROUND: bool = cfg!(target_os = "android");
 
 /// iOS has no USB accessory mode without Apple's MFi program
 const USB: bool = cfg!(not(target_os = "ios"));
