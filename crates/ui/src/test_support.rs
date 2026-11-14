@@ -87,6 +87,7 @@ pub fn device(id: &str, name: &str) -> DeviceStatus {
     connected: true,
     battery: None,
     charging: false,
+    via: Some("USB".into()),
   }
 }
 

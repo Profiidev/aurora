@@ -475,14 +475,10 @@ impl AppView {
       ));
     };
 
-    let mut badges = h_flex().flex_wrap().gap_1p5().child(badge(
-      if d.connected {
-        "Connected · Local network"
-      } else {
-        "Offline"
-      },
-      false,
-    ));
+    let mut badges = h_flex()
+      .flex_wrap()
+      .gap_1p5()
+      .child(badge(crate::app::connection_label(&d), false));
     if let Some(b) = d.battery {
       badges = badges.child(badge(
         format!(

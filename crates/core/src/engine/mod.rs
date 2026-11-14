@@ -156,13 +156,14 @@ impl Engine {
       .map(|d| match live.get(&d.id) {
         Some(l) => DeviceStatus {
           device: d.clone(),
-          ..l.status.clone()
+          ..l.snapshot()
         },
         None => DeviceStatus {
           device: d.clone(),
           connected: false,
           battery: None,
           charging: false,
+          via: None,
         },
       })
       .collect()

@@ -22,6 +22,9 @@ pub struct DeviceStatus {
   pub connected: bool,
   pub battery: Option<u8>,
   pub charging: bool,
+  /// How messages reach it now ("USB", "Direct · 192.168.1.5", "Relay")
+  #[serde(default)]
+  pub via: Option<String>,
 }
 
 /// What a waiting session shows so the other side can find it

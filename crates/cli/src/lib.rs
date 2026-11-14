@@ -178,9 +178,14 @@ impl Devices {
           connected,
           battery,
           charging,
+          via,
         } in ipc::send::<cmd::DevicesList>(())?
         {
-          let state = if connected { "connected" } else { "offline" };
+          let state = match via {
+            Some(via) if connected => format!("connected via {via}"),
+            _ if connected => "connected".into(),
+            _ => "offline".into(),
+          };
           let battery = battery.map_or(String::new(), |b| {
             format!("  battery {b}%{}", if charging { " charging" } else { "" })
           });

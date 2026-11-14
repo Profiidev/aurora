@@ -74,10 +74,16 @@ async fn pulling_the_cable_keeps_the_device_connected() {
   tokio::time::sleep(Duration::from_millis(500)).await;
   desktop.request::<messages::Ping>(&pid, &()).await.unwrap();
   phone.request::<messages::Ping>(&did, &()).await.unwrap();
+  for e in [&desktop, &phone] {
+    assert_eq!(e.devices()[0].via.as_deref(), Some("USB"));
+  }
 
   cable.abort();
   wait_for("link down", || !desktop.links().is_linked(&phone.id())).await;
-  tokio::time::sleep(Duration::from_millis(300)).await;
+  next(&mut dev, |e| {
+    matches!(e, Event::DeviceConnected(s) if s.via.as_deref().is_some_and(|v| v.starts_with("Direct")))
+  })
+  .await;
   assert!(desktop.devices()[0].connected);
   desktop.request::<messages::Ping>(&pid, &()).await.unwrap();
   phone.set_local_status(Some(7), false);

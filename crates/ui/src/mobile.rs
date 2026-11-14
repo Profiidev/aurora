@@ -438,14 +438,7 @@ impl AppView {
               .flex_1()
               .gap_1()
               .child(div().text_xl().font_semibold().child(d.device.name.clone()))
-              .child(h_flex().child(badge(
-                if d.connected {
-                  "Connected · LAN"
-                } else {
-                  "Offline"
-                },
-                false,
-              ))),
+              .child(h_flex().child(badge(crate::app::connection_label(&d), false))),
           ),
       )
       .child(v_flex().gap(px(10.)).children(tiles))

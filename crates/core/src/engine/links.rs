@@ -36,6 +36,14 @@ impl Live {
     self.link.clone().into_iter().chain(self.net.clone())
   }
 
+  /// The status with the path messages take right now
+  pub(super) fn snapshot(&self) -> DeviceStatus {
+    DeviceStatus {
+      via: self.conns().next().map(|c| via(&c).to_string()),
+      ..self.status.clone()
+    }
+  }
+
   fn slot(&mut self, link: bool) -> &mut Option<Connection> {
     if link { &mut self.link } else { &mut self.net }
   }
@@ -65,7 +73,7 @@ impl Engine {
         return;
       };
       edit(&mut l.status);
-      l.status.clone()
+      l.snapshot()
     };
     self.emit(Event::DeviceConnected(status));
   }
@@ -327,6 +335,7 @@ impl Engine {
       connected: true,
       battery,
       charging,
+      via: None,
     };
     let kept = {
       let mut live = self.live.lock().unwrap();
@@ -346,18 +355,18 @@ impl Engine {
       match replaces {
         None => {
           close_later(conn.clone());
-          false
+          None
         }
         Some(old) => {
           if let Some(old) = old {
             close_later(old);
           }
-          entry.status = status.clone();
-          true
+          entry.status = status;
+          Some(entry.snapshot())
         }
       }
     };
-    if kept {
+    if let Some(status) = kept {
       self.emit(Event::DeviceConnected(status));
     }
 
@@ -392,7 +401,8 @@ impl Engine {
       }
     }
 
-    let gone = {
+    // `Some(status)`: still reachable the other way, which the UI should show
+    let left = {
       let mut live = self.live.lock().unwrap();
       let ours = |l: &Live| {
         let slot = if link { &l.link } else { &l.net };
@@ -401,17 +411,20 @@ impl Engine {
       match live.get_mut(&id) {
         Some(l) if ours(l) => {
           *l.slot(link) = None;
-          let empty = l.net.is_none() && l.link.is_none();
-          if empty {
+          if l.net.is_none() && l.link.is_none() {
             live.remove(&id);
+            Some(None)
+          } else {
+            Some(Some(l.snapshot()))
           }
-          empty
         }
-        _ => false,
+        _ => None,
       }
     };
-    if gone {
-      self.emit(Event::DeviceDisconnected(id));
+    match left {
+      Some(None) => self.emit(Event::DeviceDisconnected(id)),
+      Some(Some(status)) => self.emit(Event::DeviceConnected(status)),
+      None => {}
     }
     conn.close(0u32.into(), b"bye");
   }

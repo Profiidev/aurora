@@ -446,6 +446,15 @@ impl Render for AppView {
   }
 }
 
+/// "Connected · USB", "Connected · Direct · 192.168.1.5" or "Offline"
+pub(crate) fn connection_label(d: &DeviceStatus) -> SharedString {
+  match &d.via {
+    _ if !d.connected => "Offline".into(),
+    Some(via) => format!("Connected · {via}").into(),
+    None => "Connected".into(),
+  }
+}
+
 /// The second line of a nearby device: its OS and how it was found
 pub(crate) fn nearby_detail(n: &Nearby) -> SharedString {
   match (n.usb, n.addr) {
@@ -615,6 +624,16 @@ mod tests {
     vcx.run_until_parked();
     assert!(fake.calls().contains(&"set_usb false".to_string()));
     vcx.read_entity(&app, |a, _| assert_eq!(a.usb(), Some(false)));
+  }
+
+  #[test]
+  fn connection_label_names_the_path() {
+    let mut d = crate::test_support::device("a", "home");
+    assert_eq!(super::connection_label(&d).as_ref(), "Connected · USB");
+    d.via = None;
+    assert_eq!(super::connection_label(&d).as_ref(), "Connected");
+    d.connected = false;
+    assert_eq!(super::connection_label(&d).as_ref(), "Offline");
   }
 
   #[test]
