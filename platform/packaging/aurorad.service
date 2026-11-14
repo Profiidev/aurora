@@ -1,0 +1,12 @@
+# Deb only (nix has its own modules). aurora-gui enables it on first start.
+[Unit]
+Description=Aurora daemon
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/aurorad
+Restart=on-failure
+
+[Install]
+WantedBy=graphical-session.target

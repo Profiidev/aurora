@@ -95,6 +95,12 @@ impl AppView {
     })
     .detach();
 
+    // the settings page shows the update state
+    #[cfg(target_os = "linux")]
+    if let Some(updater) = crate::updater::updater(cx) {
+      cx.observe(&updater, |_, _, cx| cx.notify()).detach();
+    }
+
     let mut this = Self {
       backend,
       platform,

@@ -777,6 +777,13 @@ impl AppView {
       .child(div().text_2xl().font_semibold().child("Settings"))
       .child(connection);
 
+    #[cfg(target_os = "linux")]
+    if let Some(updater) = crate::updater::updater(cx) {
+      page = page
+        .child(Separator::horizontal())
+        .child(updates(&updater, cx));
+    }
+
     if let Some(d) = self.selected_device().cloned() {
       let features = field_set(
         cx,
@@ -833,6 +840,85 @@ impl AppView {
     }
     page
   }
+}
+
+/// Version, update check and the auto update switch
+#[cfg(target_os = "linux")]
+fn updates(updater: &gpui::Entity<crate::updater::Updater>, cx: &mut Context<AppView>) -> Div {
+  use crate::updater::{self, UpdateState};
+
+  let (state, auto) = {
+    let u = updater.read(cx);
+    (u.state.clone(), u.auto)
+  };
+  let current = env!("CARGO_PKG_VERSION");
+  let status: SharedString = match &state {
+    UpdateState::Available { version } => format!("Version {current} · {version} available"),
+    UpdateState::Downloading {
+      version,
+      percent: Some(p),
+    } => format!("Version {current} · downloading {version} ({p}%)"),
+    UpdateState::Downloading { version, .. } => {
+      format!("Version {current} · downloading {version}")
+    }
+    UpdateState::Installing { version } => format!("Version {current} · installing {version}"),
+    UpdateState::UpToDate => format!("Version {current} · up to date"),
+    UpdateState::Error(e) => format!("Version {current} · update check failed: {e}"),
+    UpdateState::Idle | UpdateState::Checking => format!("Version {current}"),
+  }
+  .into();
+  let busy = matches!(
+    state,
+    UpdateState::Checking | UpdateState::Downloading { .. } | UpdateState::Installing { .. }
+  );
+  let button = match &state {
+    UpdateState::Available { version } => Button::new("update")
+      .cursor_pointer()
+      .primary()
+      .label(format!("Install {version}"))
+      .on_click(|_, _, cx| updater::install(cx)),
+    _ => {
+      let updater = updater.clone();
+      Button::new("update")
+        .cursor_pointer()
+        .loading(busy)
+        .when(busy, |b| b.icon(Spinner::new()))
+        .label("Check for updates")
+        .on_click(move |_, _, cx| {
+          let task = updater.update(cx, |u, cx| u.check(cx));
+          cx.spawn(async move |cx| {
+            if let Ok(None) = task.await {
+              cx.update(|cx| {
+                updater::toast(
+                  gpui_kit::component::notification::Notification::info("Aurora is up to date"),
+                  cx,
+                )
+              });
+            }
+          })
+          .detach();
+        })
+    }
+  };
+  let updater = updater.clone();
+  field_set(
+    cx,
+    "Updates",
+    None,
+    [
+      field_row(cx, "Aurora", &status, button).into_any_element(),
+      field_row(
+        cx,
+        "Install updates automatically",
+        "Download and install new versions when Aurora starts.",
+        Switch::new("auto-update")
+          .cursor_pointer()
+          .checked(auto)
+          .on_click(move |on: &bool, _, cx| updater.update(cx, |u, cx| u.set_auto(*on, cx))),
+      )
+      .into_any_element(),
+    ],
+  )
 }
 
 #[cfg(test)]
