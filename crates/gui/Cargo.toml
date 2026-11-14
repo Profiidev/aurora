@@ -14,5 +14,4 @@ path = "src/main.rs"
 
 [dependencies]
 aurora_ui.workspace = true
-aurora_viewer.workspace = true
 aurora_core.workspace = true

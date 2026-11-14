@@ -294,10 +294,7 @@ impl AppView {
           true,
           Some(icon(IconName::Smartphone).small().into_any_element()),
           n.name.clone(),
-          Some(match n.addr {
-            Some(a) => format!("{} · {}", n.os, a.ip()).into(),
-            None => n.os.clone().into(),
-          }),
+          Some(crate::app::nearby_detail(&n)),
           Some(
             Button::new(("nearby", i))
               .cursor_pointer()
@@ -478,14 +475,10 @@ impl AppView {
       ));
     };
 
-    let mut badges = h_flex().flex_wrap().gap_1p5().child(badge(
-      if d.connected {
-        "Connected · Local network"
-      } else {
-        "Offline"
-      },
-      false,
-    ));
+    let mut badges = h_flex()
+      .flex_wrap()
+      .gap_1p5()
+      .child(badge(crate::app::connection_label(&d), false));
     if let Some(b) = d.battery {
       badges = badges.child(badge(
         format!(
@@ -755,7 +748,11 @@ impl AppView {
           cx,
           "USB connection",
           "Connect over a cable when one is plugged in.",
-          Switch::new("usb").cursor_pointer().disabled(true),
+          Switch::new("usb")
+            .cursor_pointer()
+            .checked(self.usb().unwrap_or(false))
+            .disabled(self.usb().is_none())
+            .on_click(cx.listener(|this, on: &bool, _, cx| this.set_usb(*on, cx))),
         )
         .into_any_element(),
       ],

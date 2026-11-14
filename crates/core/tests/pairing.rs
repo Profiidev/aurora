@@ -17,6 +17,7 @@ fn settings(name: &str) -> Settings {
     discovery: false,
     port: None,
     relay: false,
+    usb: false,
   }
 }
 

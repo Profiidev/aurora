@@ -5,5 +5,6 @@ pub mod config;
 pub mod engine;
 pub mod ipc;
 pub mod pairing;
+pub mod peer;
 pub mod store;
 pub mod types;

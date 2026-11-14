@@ -1,6 +1,6 @@
 [package]
 name = "aurora_transport"
-description = "Transport trait and iroh, bluer and nusb backends for Aurora"
+description = "iroh endpoint for Aurora, with USB (and later Bluetooth) links as extra iroh paths"
 version.workspace = true
 edition.workspace = true
 repository.workspace = true
@@ -10,22 +10,46 @@ categories.workspace = true
 
 [features]
 default = []
-iroh = ["dep:iroh", "dep:iroh-mdns-address-lookup", "dep:n0-future"]
-bluer = ["dep:bluer"]
-nusb = ["dep:nusb"]
+iroh = [
+  "dep:iroh",
+  "dep:iroh-base",
+  "dep:iroh-mdns-address-lookup",
+  "dep:n0-future",
+  "dep:n0-watcher",
+  "dep:noq-udp",
+  "dep:bytes"
+]
+# USB host side (desktop): switches phones into Android Open Accessory mode
+nusb = ["iroh", "dep:nusb"]
 
 [dependencies]
 tracing.workspace = true
 aurora_proto.workspace = true
 anyhow.workspace = true
 tokio.workspace = true
-iroh = { workspace = true, optional = true, default-features = false, features = [
-  "tls-ring"
+iroh = { workspace = true, optional = true, features = [
+  "tls-ring",
+  "unstable-custom-transports"
 ] }
+iroh-base = { workspace = true, optional = true }
 iroh-mdns-address-lookup = { workspace = true, optional = true }
 n0-future = { workspace = true, optional = true }
+n0-watcher = { workspace = true, optional = true }
+noq-udp = { workspace = true, optional = true }
+bytes = { workspace = true, optional = true }
 nusb = { workspace = true, optional = true }
 
-# BlueZ is Linux only
-[target.'cfg(target_os = "linux")'.dependencies]
-bluer = { workspace = true, optional = true }
+[target.'cfg(unix)'.dependencies]
+# interrupts the accessory read thread, see usb/accessory.rs
+libc.workspace = true
+
+[dev-dependencies]
+iroh = { workspace = true, features = [
+  "tls-ring",
+  "unstable-custom-transports"
+] }
+tokio = { workspace = true, features = [
+  "rt-multi-thread",
+  "macros",
+  "io-util"
+] }

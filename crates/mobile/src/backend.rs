@@ -40,9 +40,12 @@ impl EngineBackend {
       discovery: loaded.config.pairing.discovery,
       port: None,
       relay: true,
+      usb: USB && loaded.config.transport.usb,
     };
     multicast(settings.discovery);
     let engine = rt.block_on(Engine::start(settings, dir))?;
+    #[cfg(target_os = "android")]
+    crate::usb::spawn(rt.handle().clone(), engine.clone());
     Ok(Self {
       rt,
       engine,
@@ -83,7 +86,17 @@ impl Backend for EngineBackend {
     Ok(AppSettings {
       name: s.name,
       discovery: s.discovery,
+      usb: USB.then_some(s.usb),
     })
+  }
+  fn set_usb(&self, on: bool) -> Result<()> {
+    anyhow::ensure!(USB, "this phone has no USB connection");
+    config::set_usb(&self.dir, on)?;
+    let _guard = self.rt.enter();
+    let mut s = self.engine.settings();
+    s.usb = on;
+    self.engine.set_settings(s);
+    Ok(())
   }
   fn set_discovery(&self, on: bool) -> Result<()> {
     config::set_discovery(&self.dir, on)?;
@@ -111,6 +124,9 @@ impl Backend for EngineBackend {
     }))
   }
 }
+
+/// iOS has no USB accessory mode without Apple's MFi program
+const USB: bool = cfg!(not(target_os = "ios"));
 
 /// Android drops incoming multicast, which mDNS needs, unless the app holds a lock
 fn multicast(on: bool) {
@@ -153,5 +169,17 @@ mod tests {
     assert!(phone.settings().unwrap().discovery);
     let saved = std::fs::read_to_string(dir.path().join("settings.toml")).unwrap();
     assert!(saved.contains("discovery = true"), "{saved}");
+  }
+
+  #[test]
+  fn usb_is_on_by_default_and_survives_a_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = EngineBackend::start(dir.path(), "phone".into(), "Android").unwrap();
+    assert_eq!(phone.settings().unwrap().usb, Some(true));
+    phone.set_usb(false).unwrap();
+    drop(phone);
+
+    let phone = EngineBackend::start(dir.path(), "phone".into(), "Android").unwrap();
+    assert_eq!(phone.settings().unwrap().usb, Some(false));
   }
 }

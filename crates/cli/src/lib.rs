@@ -94,7 +94,11 @@ impl Pair {
       }
       Pair::Nearby => {
         for n in ipc::send::<cmd::PairNearby>(())? {
-          let addr = n.addr.map(|a| a.ip().to_string()).unwrap_or_default();
+          let addr = match n.addr {
+            _ if n.usb => "USB".into(),
+            Some(a) => a.ip().to_string(),
+            None => String::new(),
+          };
           println!("{}  {}  {addr}\n  {}", n.name, n.os, n.link);
         }
         Ok(())
@@ -174,9 +178,14 @@ impl Devices {
           connected,
           battery,
           charging,
+          via,
         } in ipc::send::<cmd::DevicesList>(())?
         {
-          let state = if connected { "connected" } else { "offline" };
+          let state = match via {
+            Some(via) if connected => format!("connected via {via}"),
+            _ if connected => "connected".into(),
+            _ => "offline".into(),
+          };
           let battery = battery.map_or(String::new(), |b| {
             format!("  battery {b}%{}", if charging { " charging" } else { "" })
           });

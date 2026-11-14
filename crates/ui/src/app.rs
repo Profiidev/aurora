@@ -386,6 +386,19 @@ impl AppView {
     );
   }
 
+  /// Whether USB is on; `None` where the platform has no USB connection
+  pub(crate) fn usb(&self) -> Option<bool> {
+    self.settings.as_ref().and_then(|s| s.usb)
+  }
+
+  pub(crate) fn set_usb(&mut self, on: bool, cx: &mut Context<Self>) {
+    if let Some(s) = &mut self.settings {
+      s.usb = Some(on);
+    }
+    self.bg(cx, move |b| b.set_usb(on), |this, _, cx| this.refresh(cx));
+    cx.notify();
+  }
+
   pub(crate) fn set_discovery(&mut self, on: bool, cx: &mut Context<Self>) {
     if let Some(s) = &mut self.settings {
       s.discovery = on;
@@ -430,6 +443,24 @@ impl Render for AppView {
       .size_full()
       .bg(cx.theme().background)
       .text_color(cx.theme().foreground)
+  }
+}
+
+/// "Connected · USB", "Connected · Direct" or "Offline"
+pub(crate) fn connection_label(d: &DeviceStatus) -> SharedString {
+  match &d.via {
+    _ if !d.connected => "Offline".into(),
+    Some(via) => format!("Connected · {via}").into(),
+    None => "Connected".into(),
+  }
+}
+
+/// The second line of a nearby device: its OS and how it was found
+pub(crate) fn nearby_detail(n: &Nearby) -> SharedString {
+  match (n.usb, n.addr) {
+    (true, _) => format!("{} · USB", n.os).into(),
+    (false, Some(a)) => format!("{} · {}", n.os, a.ip()).into(),
+    (false, None) => n.os.clone().into(),
   }
 }
 
@@ -582,6 +613,37 @@ mod tests {
       a.on_event(Event::Unpaired("a".into()), cx);
       assert!(a.busy.is_none());
     });
+  }
+
+  #[gpui::test]
+  fn usb_changes_reach_the_backend(cx: &mut TestAppContext) {
+    let fake = FakeBackend::new(vec![]);
+    let (app, vcx) = open_app(cx, Platform::Desktop, fake.clone());
+    vcx.run_until_parked();
+    vcx.update_entity(&app, |a, cx| a.set_usb(false, cx));
+    vcx.run_until_parked();
+    assert!(fake.calls().contains(&"set_usb false".to_string()));
+    vcx.read_entity(&app, |a, _| assert_eq!(a.usb(), Some(false)));
+  }
+
+  #[test]
+  fn connection_label_names_the_path() {
+    let mut d = crate::test_support::device("a", "home");
+    assert_eq!(super::connection_label(&d).as_ref(), "Connected · USB");
+    d.via = None;
+    assert_eq!(super::connection_label(&d).as_ref(), "Connected");
+    d.connected = false;
+    assert_eq!(super::connection_label(&d).as_ref(), "Offline");
+  }
+
+  #[test]
+  fn nearby_detail_names_usb_or_address() {
+    let mut n = crate::test_support::nearby("x");
+    assert_eq!(super::nearby_detail(&n).as_ref(), "Linux · 10.0.0.3");
+    n.usb = true;
+    assert_eq!(super::nearby_detail(&n).as_ref(), "Linux · USB");
+    (n.usb, n.addr) = (false, None);
+    assert_eq!(super::nearby_detail(&n).as_ref(), "Linux");
   }
 
   #[gpui::test]

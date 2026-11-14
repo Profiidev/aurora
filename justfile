@@ -2,19 +2,48 @@ jni := "platform/android/app/src/main/jniLibs"
 abis := "-t arm64-v8a -t armeabi-v7a -t x86 -t x86_64"
 app_id := `sed -n 's/.*applicationId = "\(.*\)"/\1/p' platform/android/app/build.gradle.kts`
 
-# Debug build for one ABI (default: emulator), install and launch. e.g. `just android arm64-v8a`
+# Debug build for one ABI (default: emulator), install and launch on a device
+# of that ABI. e.g. `just android arm64-v8a`; set ANDROID_SERIAL to pick one yourself
 android abi="x86_64":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -z "${ANDROID_SERIAL:-}" ]; then
+      # primary ABI first: x86_64 images also list arm64-v8a through translation
+      for prop in ro.product.cpu.abi ro.product.cpu.abilist; do
+        for serial in $(adb devices | awk 'NR > 1 && $2 == "device" { print $1 }'); do
+          if adb -s "$serial" shell getprop "$prop" | tr -d '\r' | tr ',' '\n' | grep -qx "{{abi}}"; then
+            export ANDROID_SERIAL="$serial"
+            break 2
+          fi
+        done
+      done
+      if [ -z "${ANDROID_SERIAL:-}" ]; then
+        echo "no device for {{abi}}; connected: $(adb devices | awk 'NR > 1 && NF { print $1 }' | xargs)" >&2
+        exit 1
+      fi
+    fi
+    echo "using $ANDROID_SERIAL"
     rm -rf {{jni}}
     cargo ndk -t {{abi}} -P 30 -o {{jni}} build -p aurora_mobile --lib
-    rm -f {{jni}}/*/libgpui_mobile-*.so
-    cd platform/android && ./gradlew installDebug
+    # cargo-ndk also copies dependencies built as cdylib (gpui_mobile, iroh);
+    # libaurora.so links them statically
+    find {{jni}} -name '*.so' ! -name libaurora.so -delete
+    (cd platform/android && ./gradlew assembleDebug)
+    # not running during the update, so Android 17 does not relaunch it on top
+    # of our start (a second activity in one process panics in gpui)
+    adb shell am force-stop {{app_id}}
+    # streamed install: gradle's installDebug copies the (large) APK to
+    # /data/local/tmp first, which newer Android refuses
+    adb install -r platform/android/app/build/outputs/apk/debug/app-debug.apk
     adb shell am start -n {{app_id}}/dev.gpui.mobile.GpuiActivity
 
 # Release APK + AAB for all ABIs, signed when platform/android/keystore.properties exists
 android-release:
     rm -rf {{jni}}
     cargo ndk {{abis}} -P 30 -o {{jni}} build -p aurora_mobile --lib --release
-    rm -f {{jni}}/*/libgpui_mobile-*.so
+    # cargo-ndk also copies dependencies built as cdylib (gpui_mobile, iroh);
+    # libaurora.so links them statically
+    find {{jni}} -name '*.so' ! -name libaurora.so -delete
     cd platform/android && ./gradlew assembleRelease bundleRelease
 
 # macOS only: generate the Xcode project (its pre-build phase runs cargo)

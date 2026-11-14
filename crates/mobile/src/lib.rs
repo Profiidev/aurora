@@ -8,6 +8,8 @@ mod multicast;
 pub mod platform;
 #[cfg(target_os = "android")]
 mod scanner;
+#[cfg(target_os = "android")]
+mod usb;
 
 pub use platform::is_android_emulator;
 
