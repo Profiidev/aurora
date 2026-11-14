@@ -62,7 +62,13 @@ pub fn erase_stream<S: IpcStream>() -> StreamHandler {
       let mut events = S::subscribe(serde_json::from_value(data)?, engine).await?;
       let (tx, rx) = mpsc::channel(32);
       tokio::spawn(async move {
-        while let Some(event) = events.recv().await {
+        loop {
+          let event = tokio::select! {
+            event = events.recv() => event,
+            // the client went away; quiet streams would never notice by sending
+            () = tx.closed() => None,
+          };
+          let Some(event) = event else { break };
           let Ok(value) = serde_json::to_value(event) else {
             continue;
           };

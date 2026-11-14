@@ -47,6 +47,7 @@ command!(SettingsGet, "settings:get", () => AppSettings, |_p, e| {
     name: s.name,
     discovery: s.discovery,
     usb: Some(s.usb),
+    bluetooth: Some(s.bluetooth),
   })
 });
 command!(SettingsSetDiscovery, "settings:set_discovery", bool => (), |p, e| {
@@ -64,6 +65,35 @@ command!(SettingsSetUsb, "settings:set_usb", bool => (), |p, e| {
   e.set_settings(s);
   Ok(())
 });
+
+command!(SettingsSetBluetooth, "settings:set_bluetooth", bool => (), |p, e| {
+  crate::config::set_bluetooth(&crate::config::state_dir(), p)?;
+  let mut s = e.settings();
+  s.bluetooth = p;
+  e.set_settings(s);
+  Ok(())
+});
+
+/// Held open by the desktop app while its window is open: Bluetooth only
+/// runs while someone looks. Sends nothing.
+pub struct UiPresent;
+
+impl IpcStream for UiPresent {
+  const COMMAND: &'static str = "ui:present";
+  type Payload = ();
+  type Event = ();
+
+  async fn subscribe(_: (), engine: Arc<Engine>) -> Result<mpsc::Receiver<()>> {
+    let presence = engine.ui_presence();
+    let (tx, rx) = mpsc::channel(1);
+    tokio::spawn(async move {
+      // the server drops `rx` once the client goes away
+      tx.closed().await;
+      drop(presence);
+    });
+    Ok(rx)
+  }
+}
 
 /// Every [`Event`] of the engine until the client closes
 pub struct Events;
@@ -107,5 +137,7 @@ pub fn register_all(registry: &mut IpcRegistry) {
     .register::<SettingsGet>()
     .register::<SettingsSetDiscovery>()
     .register::<SettingsSetUsb>()
+    .register::<SettingsSetBluetooth>()
+    .register_stream::<UiPresent>()
     .register_stream::<Events>();
 }

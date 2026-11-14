@@ -25,9 +25,11 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func sceneDidBecomeActive(_ scene: UIScene) {
         gpui_ios_did_become_active(nil)
+        AuroraBluetooth.shared.setActive(true)
     }
 
     func sceneWillResignActive(_ scene: UIScene) {
+        AuroraBluetooth.shared.setActive(false)
         gpui_ios_will_resign_active(nil)
     }
 }

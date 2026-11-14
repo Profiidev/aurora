@@ -3,11 +3,13 @@
 //! - [`session`]: the single pairing session and its state machine
 //! - [`pair_flow`]: the pairing protocol on the dialing and the waiting side
 //! - [`links`]: connections to paired devices, kept alive and reconnected
-//! - [`nearby`]: unpaired devices found by mDNS or at the end of a cable
+//! - [`nearby`]: unpaired devices found by mDNS, cable or Bluetooth
+//! - [`bluetooth`]: when the Bluetooth fallback runs
 //!
 //! What paired devices say to each other once connected lives in
 //! [`crate::peer`].
 
+mod bluetooth;
 mod links;
 mod nearby;
 mod pair_flow;
@@ -16,7 +18,7 @@ mod session;
 use std::{
   collections::{HashMap, HashSet},
   path::Path,
-  sync::{Arc, Mutex, RwLock},
+  sync::{Arc, Mutex, RwLock, atomic::AtomicUsize},
   time::Duration,
 };
 
@@ -26,6 +28,7 @@ use aurora_transport::{Links, Node, load_or_create_key};
 use tokio::sync::broadcast;
 use tracing::{info, warn};
 
+pub use self::bluetooth::PresenceGuard;
 use self::{links::Live, session::Session};
 use crate::{
   pairing::hex,
@@ -48,6 +51,8 @@ pub struct Settings {
   /// Connect to phones over USB (desktop: probe devices; phone: open the
   /// accessory)
   pub usb: bool,
+  /// Bluetooth LE fallback (desktop: advertise; phone: scan and dial)
+  pub bluetooth: bool,
 }
 
 pub struct Engine {
@@ -62,6 +67,8 @@ pub struct Engine {
   local: Mutex<(Option<u8>, bool)>,
   events: broadcast::Sender<Event>,
   peers: PeerRegistry,
+  /// Open app windows (desktop) or a foreground app (phone)
+  ui: Arc<AtomicUsize>,
 }
 
 impl Engine {
@@ -96,6 +103,7 @@ impl Engine {
       local: Default::default(),
       events: broadcast::channel(64).0,
       peers,
+      ui: Arc::default(),
     });
     info!(
       "endpoint {} on port {}",
@@ -106,6 +114,7 @@ impl Engine {
     tokio::spawn(engine.clone().reconnect_loop());
     tokio::spawn(engine.clone().link_loop());
     tokio::spawn(engine.clone().nearby_loop());
+    tokio::spawn(engine.clone().bluetooth_loop());
     Ok(engine)
   }
 
@@ -217,6 +226,7 @@ pub(crate) mod tests {
       port: None,
       relay: false,
       usb: false,
+      bluetooth: false,
     }
   }
 

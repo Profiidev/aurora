@@ -6,6 +6,7 @@
 //! `(kind, peer id)`, so QUIC and TLS run end to end over the cable and a
 //! connection moves between Wi-Fi, relay and links on its own.
 
+pub mod chan;
 pub mod frame;
 
 use self::frame::{Frame, FrameReader};
@@ -73,11 +74,17 @@ pub enum LinkEvent {
   Down { kind: LinkKind, peer: Id },
 }
 
+#[derive(Debug, Clone)]
+struct Running {
+  tx: mpsc::Sender<Bytes>,
+  stop: Arc<Notify>,
+}
+
 #[derive(Debug)]
 struct Inner {
   me: Id,
-  /// Outgoing queue of each running link
-  peers: Mutex<HashMap<(LinkKind, Id), mpsc::Sender<Bytes>>>,
+  /// Each running link: its outgoing queue and how to end it
+  peers: Mutex<HashMap<(LinkKind, Id), Running>>,
   inbound: mpsc::Sender<(CustomAddr, Bytes)>,
   /// Taken by the endpoint iroh binds
   inbound_rx: Mutex<Option<mpsc::Receiver<(CustomAddr, Bytes)>>>,
@@ -107,6 +114,11 @@ impl Links {
     self.0.events.subscribe()
   }
 
+  /// This endpoint's id, as links announce it
+  pub fn id(&self) -> Id {
+    self.0.me
+  }
+
   /// A link of any kind to `peer` is up
   pub fn is_linked(&self, peer: &Id) -> bool {
     self.0.peers.lock().unwrap().keys().any(|(_, p)| p == peer)
@@ -115,8 +127,17 @@ impl Links {
   /// Resolves once no link to `peer` is left. Close connections over it
   /// then: QUIC itself only notices at its idle timeout.
   pub async fn gone(&self, peer: &Id) {
+    self.gone_where(|| self.is_linked(peer)).await
+  }
+
+  /// [`Links::gone`] for the `kind` link only
+  pub async fn gone_by(&self, kind: LinkKind, peer: &Id) {
+    self.gone_where(|| self.is_linked_by(kind, peer)).await
+  }
+
+  async fn gone_where(&self, up: impl Fn() -> bool) {
     let mut events = self.events();
-    while self.is_linked(peer) {
+    while up() {
       if let Err(broadcast::error::RecvError::Closed) = events.recv().await {
         return;
       }
@@ -185,7 +206,7 @@ impl Links {
     }
     let (tx, mut rx) = mpsc::channel::<Bytes>(QUEUE);
     // unregisters even when the task running this future is aborted
-    let _up = Registered::new(self.clone(), kind, peer, tx);
+    let up = Registered::new(self.clone(), kind, peer, tx);
 
     let from = kind.addr(&peer);
     let inbound = self.0.inbound.clone();
@@ -232,7 +253,10 @@ impl Links {
     let res = tokio::select! {
       r = read => r,
       r = write => r,
+      // `Links::disconnect`
+      () = up.stop.notified() => Ok(()),
     };
+    drop(up);
     // tells pipe-backed writers (the accessory threads) that the link is over
     let _ = writer.shutdown().await;
     res
@@ -250,7 +274,19 @@ impl Links {
   fn sender_for(&self, addr: &CustomAddr) -> Option<mpsc::Sender<Bytes>> {
     let kind = LinkKind::from_transport_id(addr.id())?;
     let peer: Id = addr.data().try_into().ok()?;
-    self.0.peers.lock().unwrap().get(&(kind, peer)).cloned()
+    Some(self.0.peers.lock().unwrap().get(&(kind, peer))?.tx.clone())
+  }
+
+  /// Ends the `kind` link to `peer`, if one runs; its `attach` returns
+  pub fn disconnect(&self, kind: LinkKind, peer: &Id) {
+    if let Some(running) = self.0.peers.lock().unwrap().get(&(kind, *peer)) {
+      running.stop.notify_one();
+    }
+  }
+
+  /// A `kind` link to `peer` is up
+  pub fn is_linked_by(&self, kind: LinkKind, peer: &Id) -> bool {
+    self.0.peers.lock().unwrap().contains_key(&(kind, *peer))
   }
 }
 
@@ -271,16 +307,17 @@ struct Registered {
   kind: LinkKind,
   peer: Id,
   tx: mpsc::Sender<Bytes>,
+  stop: Arc<Notify>,
 }
 
 impl Registered {
   fn new(links: Links, kind: LinkKind, peer: Id, tx: mpsc::Sender<Bytes>) -> Self {
-    links
-      .0
-      .peers
-      .lock()
-      .unwrap()
-      .insert((kind, peer), tx.clone());
+    let stop = Arc::new(Notify::new());
+    let running = Running {
+      tx: tx.clone(),
+      stop: stop.clone(),
+    };
+    links.0.peers.lock().unwrap().insert((kind, peer), running);
     links.update_local();
     info!("{kind:?} link up");
     let _ = links.0.events.send(LinkEvent::Up { kind, peer });
@@ -289,6 +326,7 @@ impl Registered {
       kind,
       peer,
       tx,
+      stop,
     }
   }
 }
@@ -299,7 +337,7 @@ impl Drop for Registered {
     {
       let mut peers = self.links.0.peers.lock().unwrap();
       // a newer link to the same peer may have replaced this one
-      if !peers.get(&key).is_some_and(|t| t.same_channel(&self.tx)) {
+      if !peers.get(&key).is_some_and(|t| t.tx.same_channel(&self.tx)) {
         return;
       }
       peers.remove(&key);

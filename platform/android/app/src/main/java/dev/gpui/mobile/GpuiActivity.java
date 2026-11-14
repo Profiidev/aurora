@@ -125,6 +125,18 @@ public class GpuiActivity extends GpuiInputActivity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        AuroraBluetooth.foreground = true;
+    }
+
+    @Override
+    protected void onPause() {
+        AuroraBluetooth.foreground = false;
+        super.onPause();
+    }
+
+    @Override
     protected void onDestroy() {
         // Release media session when activity is destroyed.
         GpuiMediaSession.release();

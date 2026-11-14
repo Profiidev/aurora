@@ -18,6 +18,7 @@ pub fn settings(name: &str) -> Settings {
     port: None,
     relay: false,
     usb: false,
+    bluetooth: false,
   }
 }
 
@@ -81,14 +82,16 @@ pub async fn paired() -> (Arc<Engine>, Arc<Engine>, [tempfile::TempDir; 2]) {
 
 /// An in-memory USB cable between two engines; abort to unplug
 pub fn cable(a: &Engine, b: &Engine) -> JoinHandle<()> {
+  link(LinkKind::Usb, a, b)
+}
+
+/// An in-memory link of `kind` between two engines; abort to cut it
+pub fn link(kind: LinkKind, a: &Engine, b: &Engine) -> JoinHandle<()> {
   let (x, y) = tokio::io::duplex(1 << 16);
   let (xr, xw) = tokio::io::split(x);
   let (yr, yw) = tokio::io::split(y);
   let (la, lb) = (a.links().clone(), b.links().clone());
   tokio::spawn(async move {
-    let _ = tokio::join!(
-      la.attach(LinkKind::Usb, xr, xw),
-      lb.attach(LinkKind::Usb, yr, yw)
-    );
+    let _ = tokio::join!(la.attach(kind, xr, xw), lb.attach(kind, yr, yw));
   })
 }

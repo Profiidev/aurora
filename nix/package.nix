@@ -6,6 +6,7 @@
   freetype,
   libxkbcommon,
   libxcb,
+  dbus,
   wayland,
   vulkan-loader,
 }:
@@ -49,6 +50,7 @@ rustPlatform.buildRustPackage {
     freetype
     libxkbcommon
     libxcb
+    dbus
   ];
 
   # the gpui tests may open windows, CI runs them (tests.yml)

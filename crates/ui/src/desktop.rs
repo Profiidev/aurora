@@ -755,6 +755,17 @@ impl AppView {
             .on_click(cx.listener(|this, on: &bool, _, cx| this.set_usb(*on, cx))),
         )
         .into_any_element(),
+        field_row(
+          cx,
+          "Bluetooth fallback",
+          "While this window is open and a device is offline, reach it over Bluetooth.",
+          Switch::new("bluetooth")
+            .cursor_pointer()
+            .checked(self.bluetooth().unwrap_or(false))
+            .disabled(self.bluetooth().is_none())
+            .on_click(cx.listener(|this, on: &bool, _, cx| this.set_bluetooth(*on, cx))),
+        )
+        .into_any_element(),
       ],
     );
 

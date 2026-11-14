@@ -4,18 +4,18 @@ Phone <-> desktop suite: notifications, messaging, files, clipboard, media, scre
 
 ## Layout
 
-| Crate                  | Kind                         | Role                                                                                   |
-| ---------------------- | ---------------------------- | -------------------------------------------------------------------------------------- |
-| `aurora` (root `src/`) | bin `aurora`                 | CLI entry, calls `aurora_cli`                                                          |
-| `aurora_cli`           | lib                          | clap commands, talk to aurorad over a local socket                                     |
-| `aurora_daemon`        | bin `aurorad`                | background daemon (systemd user service), Linux only                                   |
-| `aurora_gui`           | bin `aurora-gui`             | desktop app ("Aurora"), embeds the viewer                                              |
-| `aurora_mobile`        | cdylib/staticlib `libaurora` | Android + iOS app ("Aurora")                                                           |
-| `aurora_viewer`        | lib + bin `aurora-viewer`    | phone screen mirror view                                                               |
-| `aurora_core`          | lib                          | pairing, crypto, device store, config, IPC types, feature modules (cargo features)     |
-| `aurora_proto`         | lib                          | postcard wire messages                                                                 |
-| `aurora_transport`     | lib                          | iroh node; links (USB) as iroh custom transports; feature `nusb` for the USB host side |
-| `aurora_ui`            | lib                          | shared gpui theme and views                                                            |
+| Crate                  | Kind                         | Role                                                                                  |
+| ---------------------- | ---------------------------- | ------------------------------------------------------------------------------------- |
+| `aurora` (root `src/`) | bin `aurora`                 | CLI entry, calls `aurora_cli`                                                         |
+| `aurora_cli`           | lib                          | clap commands, talk to aurorad over a local socket                                    |
+| `aurora_daemon`        | bin `aurorad`                | background daemon (systemd user service), Linux only                                  |
+| `aurora_gui`           | bin `aurora-gui`             | desktop app ("Aurora"), embeds the viewer                                             |
+| `aurora_mobile`        | cdylib/staticlib `libaurora` | Android + iOS app ("Aurora")                                                          |
+| `aurora_viewer`        | lib + bin `aurora-viewer`    | phone screen mirror view                                                              |
+| `aurora_core`          | lib                          | pairing, crypto, device store, config, IPC types, feature modules (cargo features)    |
+| `aurora_proto`         | lib                          | postcard wire messages                                                                |
+| `aurora_transport`     | lib                          | iroh node; links (USB, Bluetooth) as iroh custom transports; features `nusb`, `bluer` |
+| `aurora_ui`            | lib                          | shared gpui theme and views                                                           |
 
 Native shells and packaging live in `platform/{android,ios,packaging}`.
 Dependencies and package metadata are declared once in the root `Cargo.toml`.
@@ -41,6 +41,21 @@ On Linux, the user needs access to the phone's USB device. The .deb and the
 NixOS module install `platform/packaging/70-aurora.rules`; for other
 installs copy it to `/etc/udev/rules.d/` and run
 `sudo udevadm control --reload && sudo udevadm trigger`.
+
+## Bluetooth
+
+A Bluetooth LE fallback for when neither Wi-Fi nor USB reaches a paired
+device. It only runs while an Aurora window is open (the desktop GUI, or the
+phone app in the foreground), the setting is on, and a paired device is
+offline, or the pair page waits with discovery on. aurorad advertises the
+Aurora service through BlueZ and accepts L2CAP channels; the phone scans
+and dials. As soon as the device is reachable over USB or the network, the
+Bluetooth link is dropped.
+
+The desktop needs BlueZ running and the adapter switched on (Aurora never
+switches it on). Android 12 or newer (the app's minimum) and iOS ask for the
+Bluetooth permission the first time it is needed. Switch it off with
+`[transport] bluetooth = false` or in settings.
 
 ## Peer messages
 

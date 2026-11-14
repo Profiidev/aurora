@@ -27,7 +27,7 @@ jobs:
       - name: Clippy
         env:
           ANDROID_NDK_ROOT: ${{ env.ANDROID_NDK_LATEST_HOME }}
-        run: cargo ndk -t arm64-v8a -P 30 clippy -p aurora_mobile --lib -- -D warnings
+        run: cargo ndk -t arm64-v8a -P 31 clippy -p aurora_mobile --lib -- -D warnings
 
   ios:
     name: iOS clippy

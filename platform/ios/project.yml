@@ -19,6 +19,9 @@ targets:
       - path: App.swift
         type: file
         buildPhase: sources
+      - path: AuroraBluetooth.swift
+        type: file
+        buildPhase: sources
       - path: LaunchScreen.storyboard
         type: file
         buildPhase: resources
@@ -73,6 +76,7 @@ targets:
           - '-framework EventKit'
           - '-framework StoreKit'
           - '-framework CoreMotion'
+          - '-framework CoreBluetooth'
           - '-ObjC'
         # Preprocessor macros — enable Rust GPUI integration
         GCC_PREPROCESSOR_DEFINITIONS:

@@ -41,16 +41,31 @@ impl EngineBackend {
       port: None,
       relay: true,
       usb: USB && loaded.config.transport.usb,
+      bluetooth: loaded.config.transport.bluetooth,
     };
     multicast(settings.discovery);
     let engine = rt.block_on(Engine::start(settings, dir))?;
     #[cfg(target_os = "android")]
     crate::usb::spawn(rt.handle().clone(), engine.clone());
+    #[cfg(target_os = "android")]
+    crate::bluetooth::spawn(rt.handle().clone(), engine.clone());
     Ok(Self {
       rt,
       engine,
       dir: dir.to_path_buf(),
     })
+  }
+}
+
+/// For the iOS Bluetooth glue, which Swift drives
+#[cfg(any(target_os = "ios", test))]
+impl EngineBackend {
+  pub fn engine(&self) -> Arc<Engine> {
+    self.engine.clone()
+  }
+
+  pub fn handle(&self) -> tokio::runtime::Handle {
+    self.rt.handle().clone()
   }
 }
 
@@ -87,7 +102,16 @@ impl Backend for EngineBackend {
       name: s.name,
       discovery: s.discovery,
       usb: USB.then_some(s.usb),
+      bluetooth: Some(s.bluetooth),
     })
+  }
+  fn set_bluetooth(&self, on: bool) -> Result<()> {
+    config::set_bluetooth(&self.dir, on)?;
+    let _guard = self.rt.enter();
+    let mut s = self.engine.settings();
+    s.bluetooth = on;
+    self.engine.set_settings(s);
+    Ok(())
   }
   fn set_usb(&self, on: bool) -> Result<()> {
     anyhow::ensure!(USB, "this phone has no USB connection");

@@ -4,6 +4,10 @@ extern crate gpui_mobile;
 
 mod backend;
 #[cfg(target_os = "android")]
+mod bluetooth;
+#[cfg(any(target_os = "ios", test))]
+mod bluetooth_ios;
+#[cfg(target_os = "android")]
 mod multicast;
 pub mod platform;
 #[cfg(target_os = "android")]
@@ -21,7 +25,10 @@ pub extern "C" fn gpui_ios_register_app() {
     .join("Library/Application Support/aurora");
   let backend: std::sync::Arc<dyn aurora_ui::Backend> =
     match backend::EngineBackend::start(&dir, "iPhone".into(), "iOS") {
-      Ok(b) => std::sync::Arc::new(b),
+      Ok(b) => {
+        bluetooth_ios::init(b.handle(), b.engine());
+        std::sync::Arc::new(b)
+      }
       Err(e) => {
         log::error!("cannot start engine: {e:#}");
         return;
