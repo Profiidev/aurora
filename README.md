@@ -68,6 +68,11 @@ it does not show in the shade. "Run in background" (`[mobile] background`,
 default on) turns this off: the engine then only runs while the app is open.
 The app asks once to be exempted from battery optimization.
 
+iOS has no equivalent: it suspends apps shortly after they leave the screen,
+and its background exceptions (Bluetooth, periodic refresh, push wake-ups)
+cannot hold a live connection. On iOS Aurora is connected only while the app
+is open.
+
 ## Peer messages
 
 Paired devices talk through types registered in
