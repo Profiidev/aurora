@@ -124,7 +124,8 @@ dependencies {
     // AndroidX Media for MediaSessionCompat (used by GpuiMediaSession for system controls)
     implementation("androidx.media:media:1.7.1")
     // QR scanner (AuroraQrActivity): CameraX preview + analysis feeding ML Kit's bundled model
-    val cameraX = "1.3.4"
+    // 1.4+: 16 KB page aligned native libs (Android 15+ devices)
+    val cameraX = "1.4.2"
     implementation("androidx.camera:camera-core:$cameraX")
     implementation("androidx.camera:camera-camera2:$cameraX")
     implementation("androidx.camera:camera-lifecycle:$cameraX")
