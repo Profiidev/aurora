@@ -16,7 +16,11 @@ public final class AuroraUsb {
     private static final String ACTION_PERMISSION = "dev.gpui.mobile.USB_PERMISSION";
     private static final String MANUFACTURER = "Aurora";
     private static final String MODEL = "Aurora";
+    /** Android's own "open Aurora?" dialog gets this long before we ask. */
+    private static final long ASK_AFTER_MS = 5000;
     private static boolean asked;
+    /** When the current accessory showed up, 0 while there is none. */
+    private static long seenAt;
 
     private AuroraUsb() {}
 
@@ -47,6 +51,7 @@ public final class AuroraUsb {
         UsbAccessory[] list = usb.getAccessoryList();
         if (list == null) {
             asked = false;
+            seenAt = 0;
             return -1;
         }
         for (UsbAccessory accessory : list) {
@@ -55,9 +60,13 @@ public final class AuroraUsb {
                 continue;
             }
             if (!usb.hasPermission(accessory)) {
-                // opened from the attach intent the permission is implicit;
-                // otherwise ask once per plug
-                if (!asked) {
+                // accepting the attach dialog grants it; ask ourselves only if
+                // that does not happen, once per plug, so two dialogs never stack
+                long now = android.os.SystemClock.elapsedRealtime();
+                if (seenAt == 0) {
+                    seenAt = now;
+                }
+                if (!asked && now - seenAt >= ASK_AFTER_MS) {
                     asked = true;
                     Intent intent = new Intent(ACTION_PERMISSION).setPackage(activity.getPackageName());
                     PendingIntent pending = PendingIntent.getBroadcast(
