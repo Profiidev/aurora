@@ -59,6 +59,12 @@ const CONTROL_TIMEOUT: Duration = Duration::from_secs(1);
 const IO_BUF: usize = 16 * 1024;
 /// Between link attempts while the phone app has not opened the accessory
 const RETRY: Duration = Duration::from_secs(2);
+/// A phone that just came on the bus is still setting up its USB functions
+/// and ignores the switch
+const SETTLE: Duration = Duration::from_secs(1);
+/// How long a switched phone takes to drop off the bus
+const SWITCH_WAIT: Duration = Duration::from_secs(3);
+const SWITCH_TRIES: usize = 3;
 
 /// Starts and stops the USB watcher
 #[derive(Clone)]
@@ -144,16 +150,42 @@ fn classify(vendor: u16, product: u16) -> Class {
 async fn handle(links: Links, info: DeviceInfo) {
   let res = match classify(info.vendor_id(), info.product_id()) {
     Class::Accessory => run_accessory(&links, &info).await,
-    Class::Android => switch_to_accessory(&info).await,
+    Class::Android => switch_until_gone(&info).await,
     Class::Other => return,
   };
   if let Err(e) = res {
-    debug!(
+    // phones only get here through the vendor list, so say why it failed
+    warn!(
       "USB {:04x}:{:04x}: {e:#}",
       info.vendor_id(),
       info.product_id()
     );
   }
+}
+
+/// Switches until the phone leaves the bus to come back as an accessory
+async fn switch_until_gone(info: &DeviceInfo) -> Result<()> {
+  sleep(SETTLE).await;
+  for _ in 0..SWITCH_TRIES {
+    switch_to_accessory(info).await?;
+    sleep(SWITCH_WAIT).await;
+    if !present(info.id()).await {
+      info!(
+        "switched USB device {:04x}:{:04x} to accessory mode",
+        info.vendor_id(),
+        info.product_id()
+      );
+      return Ok(());
+    }
+    debug!("phone ignored the accessory switch, trying again");
+  }
+  bail!("stays out of accessory mode")
+}
+
+async fn present(id: DeviceId) -> bool {
+  nusb::list_devices()
+    .await
+    .is_ok_and(|mut devices| devices.any(|d| d.id() == id))
 }
 
 /// Sends the AOA handshake; the phone drops off the bus and comes back as an
@@ -218,11 +250,6 @@ async fn switch_to_accessory(info: &DeviceInfo) -> Result<()> {
       CONTROL_TIMEOUT,
     )
     .await?;
-  info!(
-    "switched USB device {:04x}:{:04x} to accessory mode",
-    info.vendor_id(),
-    info.product_id()
-  );
   Ok(())
 }
 
