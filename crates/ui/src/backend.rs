@@ -31,10 +31,12 @@ pub trait Backend: Send + Sync + 'static {
   fn events(&self) -> Box<dyn Iterator<Item = Event> + Send>;
 }
 
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+/// Talks to an engine in another process: `aurorad` on the desktop, the
+/// engine service on Android
+#[cfg(not(target_os = "ios"))]
 pub use daemon::DaemonBackend;
 
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+#[cfg(not(target_os = "ios"))]
 mod daemon {
   use std::{thread::sleep, time::Duration};
 

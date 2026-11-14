@@ -1,24 +1,19 @@
 //! Wi-Fi multicast lock through `dev.gpui.mobile.AuroraMulticast`.
 
-use gpui_mobile::android::jni as h;
 use jni::objects::JValue;
+
+use crate::jvm;
 
 /// Holds or releases the Wi-Fi multicast lock (`AuroraMulticast`)
 pub fn set(on: bool) -> Result<(), String> {
-  h::with_env(|env| {
-    let activity = h::activity(env)?;
-    let cls = h::find_app_class(env, "dev.gpui.mobile.AuroraMulticast")?;
-    env
-      .call_static_method(
-        &cls,
-        jni::jni_str!("set"),
-        jni::jni_sig!("(Landroid/app/Activity;Z)V"),
-        &[JValue::Object(&activity), JValue::Bool(on)],
-      )
-      .map(|_| ())
-      .map_err(|e| {
-        env.exception_clear();
-        e.to_string()
-      })
+  jvm::with_env(|env| {
+    jvm::call_with_context(
+      env,
+      "dev.gpui.mobile.AuroraMulticast",
+      jni::jni_str!("set"),
+      jni::jni_sig!("(Landroid/content/Context;Z)V"),
+      &[JValue::Bool(on)],
+    )
+    .map(|_| ())
   })
 }

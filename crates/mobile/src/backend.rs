@@ -14,8 +14,8 @@ use aurora_ui::Backend;
 use tokio::{runtime::Runtime, sync::broadcast::error::RecvError};
 
 pub struct EngineBackend {
-  rt: Runtime,
-  engine: Arc<Engine>,
+  pub(crate) rt: Runtime,
+  pub(crate) engine: Arc<Engine>,
   dir: std::path::PathBuf,
 }
 
@@ -46,6 +46,22 @@ impl EngineBackend {
     };
     multicast(settings.discovery);
     let engine = rt.block_on(Engine::start(settings, dir))?;
+    #[cfg(target_os = "android")]
+    {
+      // the IPC client's settings changes reach the engine, not this backend
+      let engine = engine.clone();
+      std::thread::spawn(move || {
+        let mut on = engine.settings().discovery;
+        loop {
+          std::thread::sleep(std::time::Duration::from_secs(1));
+          let now = engine.settings().discovery;
+          if now != on {
+            multicast(now);
+            on = now;
+          }
+        }
+      });
+    }
     #[cfg(target_os = "android")]
     crate::usb::spawn(rt.handle().clone(), engine.clone());
     #[cfg(target_os = "android")]

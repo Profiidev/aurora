@@ -57,6 +57,17 @@ switches it on). Android 12 or newer (the app's minimum) and iOS ask for the
 Bluetooth permission the first time it is needed. Switch it off with
 `[transport] bluetooth = false` or in settings.
 
+## Android background
+
+On Android the engine runs in a foreground service in its own process
+(`:engine`), the phone's counterpart of aurorad: the app UI talks to it over
+the same local IPC socket, so the phone stays connected while the app is
+closed and the engine starts again after a reboot. Its notification goes to
+a silent channel and Aurora never asks for the notification permission, so
+it does not show in the shade. "Run in background" (`[mobile] background`,
+default on) turns this off: the engine then only runs while the app is open.
+The app asks once to be exempted from battery optimization.
+
 ## Peer messages
 
 Paired devices talk through types registered in

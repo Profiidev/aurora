@@ -12,7 +12,7 @@ use gpui::{App, AppContext, WindowOptions};
 
 pub use app::Platform;
 pub use backend::Backend;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+#[cfg(not(target_os = "ios"))]
 pub use backend::DaemonBackend;
 pub use widgets::AppAssets;
 

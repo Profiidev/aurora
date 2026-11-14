@@ -48,9 +48,15 @@ impl Engine {
     (self.store.lock().unwrap().devices().iter()).any(|d| !live.contains_key(&d.id))
   }
 
+  /// Bluetooth may be used at all: switched on and someone looking. Links
+  /// end when this turns false.
+  pub fn bluetooth_allowed(&self) -> bool {
+    self.settings().bluetooth && self.ui_present()
+  }
+
   /// Bluetooth should run: advertise (desktop) or scan (phone)
   pub fn bluetooth_wanted(&self) -> bool {
-    self.settings().bluetooth && self.ui_present() && (self.any_offline() || self.pairing_nearby())
+    self.bluetooth_allowed() && (self.any_offline() || self.pairing_nearby())
   }
 
   /// The phone saw a desktop advertising the start of its id: dial it when

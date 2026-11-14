@@ -1,6 +1,5 @@
 package dev.gpui.mobile;
 
-import android.app.Activity;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
@@ -25,8 +24,8 @@ public final class AuroraUsb {
     private AuroraUsb() {}
 
     /** Whether an Aurora accessory is still plugged in. */
-    public static boolean attached(Activity activity) {
-        UsbManager usb = (UsbManager) activity.getSystemService(Context.USB_SERVICE);
+    public static boolean attached(Context context) {
+        UsbManager usb = (UsbManager) context.getSystemService(Context.USB_SERVICE);
         if (usb == null || usb.getAccessoryList() == null) {
             return false;
         }
@@ -43,8 +42,8 @@ public final class AuroraUsb {
      * Opens the accessory and hands its descriptor to the caller, who owns it
      * from then on. -1 while there is none, or the user has not allowed it yet.
      */
-    public static synchronized int open(Activity activity) {
-        UsbManager usb = (UsbManager) activity.getSystemService(Context.USB_SERVICE);
+    public static synchronized int open(Context context) {
+        UsbManager usb = (UsbManager) context.getSystemService(Context.USB_SERVICE);
         if (usb == null) {
             return -1;
         }
@@ -68,9 +67,9 @@ public final class AuroraUsb {
                 }
                 if (!asked && now - seenAt >= ASK_AFTER_MS) {
                     asked = true;
-                    Intent intent = new Intent(ACTION_PERMISSION).setPackage(activity.getPackageName());
+                    Intent intent = new Intent(ACTION_PERMISSION).setPackage(context.getPackageName());
                     PendingIntent pending = PendingIntent.getBroadcast(
-                            activity, 0, intent, PendingIntent.FLAG_IMMUTABLE);
+                            context, 0, intent, PendingIntent.FLAG_IMMUTABLE);
                     usb.requestPermission(accessory, pending);
                 }
                 return -1;
