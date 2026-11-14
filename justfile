@@ -67,9 +67,15 @@ icon src:
     #!/usr/bin/env bash
     set -euo pipefail
     res=platform/android/app/src/main/res
+    opaque=$(magick "{{src}}" -format '%[opaque]' info:)
     for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
         size=${d#*:}
         magick "{{src}}" -resize "${size}x${size}" "$res/mipmap-${d%:*}/ic_launcher.png"
+        # transparent logos already have their own shape; cropping would turn the background black
+        if [ "$opaque" = False ]; then
+            cp "$res/mipmap-${d%:*}/ic_launcher.png" "$res/mipmap-${d%:*}/ic_launcher_round.png"
+            continue
+        fi
         magick "{{src}}" -resize "${size}x${size}" \
             \( +clone -alpha extract -fill black -colorize 100 -fill white -draw "circle $((size/2)),$((size/2)) $((size/2)),0" \) \
             -alpha off -compose CopyOpacity -composite "$res/mipmap-${d%:*}/ic_launcher_round.png"

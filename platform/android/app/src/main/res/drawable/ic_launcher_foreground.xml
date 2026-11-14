@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Lucide sparkles (source: platform/packaging/icons/icon.svg), scaled into the adaptive icon safe zone -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:translateX="26.4"
+        android:translateY="26.4"
+        android:scaleX="2.3"
+        android:scaleY="2.3">
+        <path
+            android:strokeWidth="2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M11.017,2.814a1,1 0,0 1,1.966 0l1.051,5.558a2,2 0,0 0,1.594 1.594l5.558,1.051a1,1 0,0 1,0 1.966l-5.558,1.051a2,2 0,0 0,-1.594 1.594l-1.051,5.558a1,1 0,0 1,-1.966 0l-1.051,-5.558a2,2 0,0 0,-1.594 -1.594l-5.558,-1.051a1,1 0,0 1,0 -1.966l5.558,-1.051a2,2 0,0 0,1.594 -1.594zM20,2v4M22,4h-4M2,20a2,2 0,1 0,4 0a2,2 0,1 0,-4 0z">
+            <aapt:attr name="android:strokeColor">
+                <gradient
+                    android:type="linear"
+                    android:startX="3"
+                    android:startY="2"
+                    android:endX="21"
+                    android:endY="22"
+                    android:startColor="#FF67E8F9"
+                    android:centerColor="#FF818CF8"
+                    android:endColor="#FFC084FC" />
+            </aapt:attr>
+        </path>
+    </group>
+</vector>
