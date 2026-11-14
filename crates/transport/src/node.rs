@@ -4,13 +4,17 @@ use std::{
   net::{Ipv4Addr, SocketAddr},
   path::Path,
   sync::Arc,
+  time::Duration,
 };
 
 use anyhow::{Result, anyhow};
 use aurora_proto::{ALPN, Id};
 use iroh::{
   Endpoint, EndpointAddr, EndpointId, RelayUrl, SecretKey, TransportAddr,
-  endpoint::{Connection as IrohConn, RecvStream as IrohRecv, SendStream as IrohSend, presets},
+  endpoint::{
+    Connection as IrohConn, QuicTransportConfig, RecvStream as IrohRecv, SendStream as IrohSend,
+    presets,
+  },
 };
 use tokio::sync::broadcast;
 
@@ -129,6 +133,7 @@ impl Node {
     let mdns = Arc::new(Mdns::new(key.public(), seen.clone()));
     let links = Links::new(*key.public().as_bytes());
     let ep = builder
+      .transport_config(network_transport()?)
       .secret_key(key.clone())
       .alpns(vec![ALPN.to_vec()])
       .bind_addr((Ipv4Addr::UNSPECIFIED, port.unwrap_or(0)))?
@@ -262,6 +267,19 @@ impl Node {
     self.set_bluetooth(false);
     tokio::join!(self.ep.close(), self.link_ep.close());
   }
+}
+
+/// A network connection that hears nothing for this long is dead: iroh
+/// sends a heartbeat every 5 s, so two in a row went missing. Its default
+/// (30 s) kept a phone that lost Wi-Fi "connected" while Bluetooth waited.
+const NETWORK_IDLE_TIMEOUT: Duration = Duration::from_secs(10);
+
+fn network_transport() -> Result<QuicTransportConfig> {
+  Ok(
+    QuicTransportConfig::builder()
+      .max_idle_timeout(Some(NETWORK_IDLE_TIMEOUT.try_into()?))
+      .build(),
+  )
 }
 
 async fn forward_links(mut events: broadcast::Receiver<LinkEvent>, seen: broadcast::Sender<Seen>) {

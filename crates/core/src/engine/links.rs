@@ -56,6 +56,9 @@ pub(super) struct Live {
   /// Indexed by `Path as usize`, so iteration goes best first
   conns: [Option<Connection>; 3],
   pub(super) status: DeviceStatus,
+  /// The path last reported to the UI; iroh moves connections between
+  /// direct and relay without telling us
+  shown_via: Option<String>,
 }
 
 impl Live {
@@ -90,6 +93,23 @@ impl Engine {
   /// The connection to send to `device` on: the link one while it is up
   pub(crate) fn live_conn(&self, device: &str) -> Option<Connection> {
     self.live.lock().unwrap().get(device)?.conns().next()
+  }
+
+  /// Reports devices whose connection moved to another path (direct to
+  /// relay, a better connection gone)
+  pub(super) fn refresh_paths(&self) {
+    let moved: Vec<_> = (self.live.lock().unwrap().values_mut())
+      .filter_map(|l| {
+        let now = l.snapshot();
+        (now.via != l.shown_via).then(|| {
+          l.shown_via.clone_from(&now.via);
+          now
+        })
+      })
+      .collect();
+    for status in moved {
+      self.emit(Event::DeviceConnected(status));
+    }
   }
 
   /// Updates what `device` last reported about itself
@@ -372,6 +392,7 @@ impl Engine {
       let entry = live.entry(id.clone()).or_insert_with(|| Live {
         conns: Default::default(),
         status: status.clone(),
+        shown_via: None,
       });
       let me = self.node.id();
       let slot = entry.slot(path);

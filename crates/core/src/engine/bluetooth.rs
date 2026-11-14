@@ -86,6 +86,7 @@ impl Engine {
           self.node.links().disconnect(LinkKind::Bluetooth, &peer);
         }
       }
+      self.refresh_paths();
       sleep(CHECK_EVERY).await;
     }
   }
