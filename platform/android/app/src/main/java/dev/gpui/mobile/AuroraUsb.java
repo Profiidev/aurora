@@ -20,6 +20,21 @@ public final class AuroraUsb {
 
     private AuroraUsb() {}
 
+    /** Whether an Aurora accessory is still plugged in. */
+    public static boolean attached(Activity activity) {
+        UsbManager usb = (UsbManager) activity.getSystemService(Context.USB_SERVICE);
+        if (usb == null || usb.getAccessoryList() == null) {
+            return false;
+        }
+        for (UsbAccessory accessory : usb.getAccessoryList()) {
+            if (MANUFACTURER.equals(accessory.getManufacturer())
+                    && MODEL.equals(accessory.getModel())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Opens the accessory and hands its descriptor to the caller, who owns it
      * from then on. -1 while there is none, or the user has not allowed it yet.

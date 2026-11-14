@@ -246,3 +246,34 @@ async fn accessory_follows_a_new_host_on_the_same_cable() {
     .unwrap()
     .unwrap();
 }
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn dropping_the_accessory_link_frees_a_blocked_fd() {
+  use std::{
+    io::Read,
+    os::{fd::OwnedFd, unix::net::UnixStream},
+  };
+
+  let phone = node().await;
+  // the host never sends: the phone's read thread blocks, like acc_read
+  // after the cable is pulled on some kernels
+  let (phone_end, mut host_end) = UnixStream::pair().unwrap();
+  let links = phone.links().clone();
+  let task = tokio::spawn(async move {
+    aurora_transport::usb::attach_fd(&links, OwnedFd::from(phone_end)).await
+  });
+  sleep(Duration::from_millis(300)).await;
+  task.abort();
+
+  // both of the phone's copies of the fd close: the host reads end of file
+  host_end
+    .set_read_timeout(Some(Duration::from_secs(5)))
+    .unwrap();
+  let mut buf = Vec::new();
+  let res = tokio::task::spawn_blocking(move || host_end.read_to_end(&mut buf).map(|_| buf))
+    .await
+    .unwrap();
+  let hello = res.expect("fd closed, not timed out");
+  assert!(hello.starts_with(b"AU"), "only the phone's hello was sent");
+}

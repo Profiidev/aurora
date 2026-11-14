@@ -41,6 +41,13 @@ pub fn spawn(rt: Handle, engine: Arc<Engine>) {
             r = aurora_transport::usb::attach_fd(engine.links(), fd) => r,
             // switched off in settings
             () = async { while engine.settings().usb { tokio::time::sleep(POLL).await } } => Ok(()),
+            // unplugged: dropping the link frees the accessory, some kernels
+            // never end its blocked read on their own
+            () = async {
+              while tokio::task::spawn_blocking(attached).await.unwrap_or(false) {
+                tokio::time::sleep(POLL).await;
+              }
+            } => Ok(()),
           }
         });
         if let Err(e) = res {
@@ -51,6 +58,28 @@ pub fn spawn(rt: Handle, engine: Arc<Engine>) {
   if let Err(e) = res {
     log::error!("cannot start the USB thread: {e}");
   }
+}
+
+/// An Aurora accessory is still plugged in
+fn attached() -> bool {
+  h::with_env(|env| {
+    let activity = h::activity(env)?;
+    let cls = h::find_app_class(env, CLASS)?;
+    env
+      .call_static_method(
+        &cls,
+        jni::jni_str!("attached"),
+        jni::jni_sig!("(Landroid/app/Activity;)Z"),
+        &[JValue::Object(&activity)],
+      )
+      .and_then(|v| v.z())
+      .map_err(|e| {
+        env.exception_clear();
+        e.to_string()
+      })
+  })
+  // a JNI hiccup is no reason to drop a working link
+  .unwrap_or(true)
 }
 
 /// The accessory's fd, `None` while there is none or permission is pending

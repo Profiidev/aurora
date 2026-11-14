@@ -724,6 +724,7 @@ dependencies = [
  "iroh",
  "iroh-base",
  "iroh-mdns-address-lookup",
+ "libc",
  "n0-future",
  "n0-watcher",
  "noq-udp",

@@ -203,7 +203,12 @@ impl Links {
               answer.notify_one();
             }
           }
-          Frame::Hello { .. } => return Err(io::Error::other("another device on the link")),
+          Frame::Hello { .. } => {
+            return Err(io::Error::new(
+              io::ErrorKind::ConnectionReset,
+              "another device on the link",
+            ));
+          }
         }
       }
       io::Result::Ok(())

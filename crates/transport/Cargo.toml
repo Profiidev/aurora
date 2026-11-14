@@ -39,6 +39,10 @@ noq-udp = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
 nusb = { workspace = true, optional = true }
 
+[target.'cfg(unix)'.dependencies]
+# interrupts the accessory read thread, see usb/accessory.rs
+libc.workspace = true
+
 [dev-dependencies]
 iroh = { workspace = true, features = ["tls-ring", "unstable-custom-transports"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "io-util"] }
