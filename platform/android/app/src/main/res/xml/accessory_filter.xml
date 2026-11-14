@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Matches the strings aurorad sends when it switches a phone to accessory
+     mode (crates/transport/src/usb/mod.rs) -->
+<resources>
+    <usb-accessory manufacturer="Aurora" model="Aurora" />
+</resources>

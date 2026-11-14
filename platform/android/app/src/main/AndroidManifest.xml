@@ -56,6 +56,9 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
+    <!-- USB link: the computer switches the phone to accessory mode -->
+    <uses-feature android:name="android.hardware.usb.accessory" android:required="false" />
+
     <!-- Vulkan feature declaration.
          `required="false"` allows the app to fall back to OpenGL ES on
          devices without Vulkan support. -->
@@ -124,6 +127,16 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- opens the app (and grants the accessory) when aurorad
+                 switches this phone to USB accessory mode -->
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED"
+                android:resource="@xml/accessory_filter"
+            />
 
             <!-- disabled: enable with gpui-mobile feature deeplink
             <intent-filter>

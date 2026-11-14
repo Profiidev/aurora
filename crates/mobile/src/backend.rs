@@ -44,6 +44,8 @@ impl EngineBackend {
     };
     multicast(settings.discovery);
     let engine = rt.block_on(Engine::start(settings, dir))?;
+    #[cfg(target_os = "android")]
+    crate::usb::spawn(rt.handle().clone(), engine.clone());
     Ok(Self {
       rt,
       engine,
