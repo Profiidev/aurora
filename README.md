@@ -4,18 +4,18 @@ Phone <-> desktop suite: notifications, messaging, files, clipboard, media, scre
 
 ## Layout
 
-| Crate                  | Kind                         | Role                                                                                   |
-| ---------------------- | ---------------------------- | -------------------------------------------------------------------------------------- |
-| `aurora` (root `src/`) | bin `aurora`                 | CLI entry, calls `aurora_cli`                                                          |
-| `aurora_cli`           | lib                          | clap commands, talk to aurorad over a local socket                                     |
-| `aurora_daemon`        | bin `aurorad`                | background daemon (systemd user service), Linux only                                   |
-| `aurora_gui`           | bin `aurora-gui`             | desktop app ("Aurora"), embeds the viewer                                              |
-| `aurora_mobile`        | cdylib/staticlib `libaurora` | Android + iOS app ("Aurora")                                                           |
-| `aurora_viewer`        | lib + bin `aurora-viewer`    | phone screen mirror view                                                               |
-| `aurora_core`          | lib                          | pairing, crypto, device store, config, IPC types, feature modules (cargo features)     |
-| `aurora_proto`         | lib                          | postcard wire messages                                                                 |
-| `aurora_transport`     | lib                          | iroh node; links (USB, Bluetooth) as iroh custom transports; features `nusb`, `bluer`   |
-| `aurora_ui`            | lib                          | shared gpui theme and views                                                            |
+| Crate                  | Kind                         | Role                                                                                  |
+| ---------------------- | ---------------------------- | ------------------------------------------------------------------------------------- |
+| `aurora` (root `src/`) | bin `aurora`                 | CLI entry, calls `aurora_cli`                                                         |
+| `aurora_cli`           | lib                          | clap commands, talk to aurorad over a local socket                                    |
+| `aurora_daemon`        | bin `aurorad`                | background daemon (systemd user service), Linux only                                  |
+| `aurora_gui`           | bin `aurora-gui`             | desktop app ("Aurora"), embeds the viewer                                             |
+| `aurora_mobile`        | cdylib/staticlib `libaurora` | Android + iOS app ("Aurora")                                                          |
+| `aurora_viewer`        | lib + bin `aurora-viewer`    | phone screen mirror view                                                              |
+| `aurora_core`          | lib                          | pairing, crypto, device store, config, IPC types, feature modules (cargo features)    |
+| `aurora_proto`         | lib                          | postcard wire messages                                                                |
+| `aurora_transport`     | lib                          | iroh node; links (USB, Bluetooth) as iroh custom transports; features `nusb`, `bluer` |
+| `aurora_ui`            | lib                          | shared gpui theme and views                                                           |
 
 Native shells and packaging live in `platform/{android,ios,packaging}`.
 Dependencies and package metadata are declared once in the root `Cargo.toml`.
