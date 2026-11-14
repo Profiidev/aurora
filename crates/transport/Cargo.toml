@@ -44,5 +44,12 @@ nusb = { workspace = true, optional = true }
 libc.workspace = true
 
 [dev-dependencies]
-iroh = { workspace = true, features = ["tls-ring", "unstable-custom-transports"] }
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "io-util"] }
+iroh = { workspace = true, features = [
+  "tls-ring",
+  "unstable-custom-transports"
+] }
+tokio = { workspace = true, features = [
+  "rt-multi-thread",
+  "macros",
+  "io-util"
+] }
