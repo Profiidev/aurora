@@ -136,6 +136,8 @@ depends = [
   "libfreetype6",
   "libxcb1"
 ]
+# lets the logged-in user switch phones to USB accessory mode
+files = { "platform/packaging/70-aurora.rules" = "lib/udev/rules.d/70-aurora.rules" }
 
 [dependencies]
 aurora_cli.workspace = true
