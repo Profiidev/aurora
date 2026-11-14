@@ -446,7 +446,7 @@ impl Render for AppView {
   }
 }
 
-/// "Connected · USB", "Connected · Direct · 192.168.1.5" or "Offline"
+/// "Connected · USB", "Connected · Direct" or "Offline"
 pub(crate) fn connection_label(d: &DeviceStatus) -> SharedString {
   match &d.via {
     _ if !d.connected => "Offline".into(),

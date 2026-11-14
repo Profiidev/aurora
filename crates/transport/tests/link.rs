@@ -153,3 +153,46 @@ async fn accessory_fd_carries_a_link() {
     .await
     .expect("phone side sees the cable go");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn waiting_end_skips_stale_bytes_and_answers_a_restarted_host() {
+  use aurora_transport::link::frame;
+  use tokio::io::AsyncWriteExt;
+
+  let phone = node().await;
+  let (x, y) = tokio::io::duplex(1 << 16);
+  let (xr, xw) = tokio::io::split(x);
+  let links = phone.links().clone();
+  tokio::spawn(async move {
+    let _ = links.attach_waiting(LinkKind::Usb, xr, xw).await;
+  });
+  let (hr, mut hw) = tokio::io::split(y);
+  let mut hr = frame::FrameReader::new(hr);
+  let host: aurora_proto::Id = [7; 32];
+  // longer than the plain handshake timeout: the phone keeps waiting
+  sleep(Duration::from_secs(6)).await;
+  hw.write_all(b"\x13\x37 tail of an old session AU\xff\x00")
+    .await
+    .unwrap();
+  frame::write_hello(&mut hw, &host, true).await.unwrap();
+  // the phone's own hello, then its answer to ours
+  assert_eq!(next_hello(&mut hr).await, (phone.id(), true));
+  assert_eq!(next_hello(&mut hr).await, (phone.id(), false));
+  wait_for("link up", || phone.links().is_linked(&host)).await;
+
+  // the host restarts its end of the cable without unplugging
+  frame::write_hello(&mut hw, &host, true).await.unwrap();
+  assert_eq!(next_hello(&mut hr).await, (phone.id(), false));
+  assert!(phone.links().is_linked(&host));
+}
+
+async fn next_hello<R: tokio::io::AsyncRead + Unpin>(
+  r: &mut aurora_transport::link::frame::FrameReader<R>,
+) -> (aurora_proto::Id, bool) {
+  use aurora_transport::link::frame::Frame;
+  loop {
+    if let Some(Frame::Hello { id, reply }) = r.next().await.unwrap() {
+      return (id, reply);
+    }
+  }
+}

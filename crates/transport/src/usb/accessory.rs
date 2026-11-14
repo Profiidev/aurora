@@ -70,7 +70,7 @@ pub async fn attach_fd(links: &Links, fd: OwnedFd) -> io::Result<()> {
         }
       }
     })?;
-  links.attach(LinkKind::Usb, link_r, link_w).await
+  links.attach_waiting(LinkKind::Usb, link_r, link_w).await
   // the read thread stays blocked on the fd until the cable goes; the write
   // thread ends once `link_w` is dropped
 }

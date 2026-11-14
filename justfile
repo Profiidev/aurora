@@ -29,6 +29,9 @@ android abi="x86_64":
     # libaurora.so links them statically
     find {{jni}} -name '*.so' ! -name libaurora.so -delete
     (cd platform/android && ./gradlew assembleDebug)
+    # not running during the update, so Android 17 does not relaunch it on top
+    # of our start (a second activity in one process panics in gpui)
+    adb shell am force-stop {{app_id}}
     # streamed install: gradle's installDebug copies the (large) APK to
     # /data/local/tmp first, which newer Android refuses
     adb install -r platform/android/app/build/outputs/apk/debug/app-debug.apk

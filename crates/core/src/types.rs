@@ -22,7 +22,7 @@ pub struct DeviceStatus {
   pub connected: bool,
   pub battery: Option<u8>,
   pub charging: bool,
-  /// How messages reach it now ("USB", "Direct · 192.168.1.5", "Relay")
+  /// How messages reach it now: "USB", "Direct" or "Relay"
   #[serde(default)]
   pub via: Option<String>,
 }

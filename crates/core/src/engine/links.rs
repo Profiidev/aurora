@@ -39,7 +39,7 @@ impl Live {
   /// The status with the path messages take right now
   pub(super) fn snapshot(&self) -> DeviceStatus {
     DeviceStatus {
-      via: self.conns().next().map(|c| via(&c).to_string()),
+      via: self.conns().next().map(|c| via(&c).label().into()),
       ..self.status.clone()
     }
   }

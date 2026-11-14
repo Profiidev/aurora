@@ -64,6 +64,19 @@ pub enum Via {
   Link(LinkKind),
 }
 
+impl Via {
+  /// Without the address: "USB", "Direct", "Relay"
+  pub fn label(&self) -> &'static str {
+    match self {
+      Via::Direct(_) => "Direct",
+      Via::Relay => "Relay",
+      Via::Link(LinkKind::Usb) => "USB",
+      Via::Link(LinkKind::Bluetooth) => "Bluetooth",
+    }
+  }
+}
+
+/// With the address, for the pairing screen: "Direct · 192.168.1.5"
 impl std::fmt::Display for Via {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {

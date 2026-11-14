@@ -80,9 +80,10 @@ async fn pulling_the_cable_keeps_the_device_connected() {
 
   cable.abort();
   wait_for("link down", || !desktop.links().is_linked(&phone.id())).await;
-  next(&mut dev, |e| {
-    matches!(e, Event::DeviceConnected(s) if s.via.as_deref().is_some_and(|v| v.starts_with("Direct")))
-  })
+  next(
+    &mut dev,
+    |e| matches!(e, Event::DeviceConnected(s) if s.via.as_deref() == Some("Direct")),
+  )
   .await;
   assert!(desktop.devices()[0].connected);
   desktop.request::<messages::Ping>(&pid, &()).await.unwrap();

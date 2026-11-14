@@ -8,6 +8,8 @@
 
 pub mod frame;
 
+use self::frame::{Frame, FrameReader};
+
 use std::{
   collections::HashMap,
   io,
@@ -28,7 +30,7 @@ use iroh_base::CustomAddr;
 use n0_future::boxed::BoxStream;
 use tokio::{
   io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
-  sync::{broadcast, mpsc},
+  sync::{Notify, broadcast, mpsc},
   time::timeout,
 };
 use tracing::{debug, info};
@@ -121,20 +123,64 @@ impl Links {
     }
   }
 
-  /// Runs a link over a byte pipe until it closes. Both ends call this.
-  pub async fn attach<R, W>(&self, kind: LinkKind, reader: R, mut writer: W) -> io::Result<()>
+  /// Runs a link over a byte pipe until it closes. Both ends call this; the
+  /// handshake gives up after a few seconds.
+  pub async fn attach<R, W>(&self, kind: LinkKind, reader: R, writer: W) -> io::Result<()>
   where
     R: AsyncRead + Unpin + Send,
     W: AsyncWrite + Unpin + Send,
   {
-    let mut reader = BufReader::with_capacity(READ_BUF, reader);
-    let peer = timeout(HELLO_TIMEOUT, async {
-      frame::write_hello(&mut writer, &self.0.me).await?;
-      frame::read_hello(&mut reader).await
-    })
-    .await
-    .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "no link hello"))??;
-    if peer == self.0.me {
+    self
+      .attach_with(kind, reader, writer, Some(HELLO_TIMEOUT))
+      .await
+  }
+
+  /// [`Links::attach`] that waits for the other side as long as the pipe
+  /// lives: the phone's accessory end, open before the computer is ready
+  pub async fn attach_waiting<R, W>(&self, kind: LinkKind, reader: R, writer: W) -> io::Result<()>
+  where
+    R: AsyncRead + Unpin + Send,
+    W: AsyncWrite + Unpin + Send,
+  {
+    self.attach_with(kind, reader, writer, None).await
+  }
+
+  async fn attach_with<R, W>(
+    &self,
+    kind: LinkKind,
+    reader: R,
+    mut writer: W,
+    patience: Option<Duration>,
+  ) -> io::Result<()>
+  where
+    R: AsyncRead + Unpin + Send,
+    W: AsyncWrite + Unpin + Send,
+  {
+    let me = self.0.me;
+    let mut reader = FrameReader::new(BufReader::with_capacity(READ_BUF, reader));
+    let handshake = async {
+      frame::write_hello(&mut writer, &me, true).await?;
+      loop {
+        match reader.next().await? {
+          Some(Frame::Hello { id, reply }) => {
+            if reply {
+              frame::write_hello(&mut writer, &me, false).await?;
+            }
+            return Ok(id);
+          }
+          // the other side's packets from before it saw our hello
+          Some(Frame::Datagram(_)) => {}
+          None => return Err(io::Error::from(io::ErrorKind::UnexpectedEof)),
+        }
+      }
+    };
+    let peer = match patience {
+      Some(t) => timeout(t, handshake)
+        .await
+        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "no link hello"))??,
+      None => handshake.await?,
+    };
+    if peer == me {
       return Err(io::Error::other("link loops back to this endpoint"));
     }
     let (tx, mut rx) = mpsc::channel::<Bytes>(QUEUE);
@@ -143,20 +189,38 @@ impl Links {
 
     let from = kind.addr(&peer);
     let inbound = self.0.inbound.clone();
+    let answer = Notify::new();
     let read = async {
-      while let Some(data) = frame::read_datagram(&mut reader).await? {
-        // a full queue drops the packet, QUIC resends
-        let _ = inbound.try_send((from.clone(), data.into()));
+      while let Some(frame) = reader.next().await? {
+        match frame {
+          // a full queue drops the packet, QUIC resends
+          Frame::Datagram(data) => {
+            let _ = inbound.try_send((from.clone(), data.into()));
+          }
+          // the other side restarted its end of the cable
+          Frame::Hello { id, reply } if id == peer => {
+            if reply {
+              answer.notify_one();
+            }
+          }
+          Frame::Hello { .. } => return Err(io::Error::other("another device on the link")),
+        }
       }
       io::Result::Ok(())
     };
     let write = async {
-      while let Some(data) = rx.recv().await {
-        frame::write_datagram(&mut writer, &data).await?;
-        while let Ok(data) = rx.try_recv() {
-          frame::write_datagram(&mut writer, &data).await?;
+      loop {
+        tokio::select! {
+          data = rx.recv() => {
+            let Some(data) = data else { break };
+            frame::write_datagram(&mut writer, &data).await?;
+            while let Ok(data) = rx.try_recv() {
+              frame::write_datagram(&mut writer, &data).await?;
+            }
+            writer.flush().await?;
+          }
+          () = answer.notified() => frame::write_hello(&mut writer, &me, false).await?,
         }
-        writer.flush().await?;
       }
       io::Result::Ok(())
     };
