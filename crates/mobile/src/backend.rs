@@ -57,6 +57,18 @@ impl EngineBackend {
   }
 }
 
+/// For the iOS Bluetooth glue, which Swift drives
+#[cfg(any(target_os = "ios", test))]
+impl EngineBackend {
+  pub fn engine(&self) -> Arc<Engine> {
+    self.engine.clone()
+  }
+
+  pub fn handle(&self) -> tokio::runtime::Handle {
+    self.rt.handle().clone()
+  }
+}
+
 impl Backend for EngineBackend {
   fn devices(&self) -> Result<Vec<DeviceStatus>> {
     Ok(self.engine.devices())
