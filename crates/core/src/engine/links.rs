@@ -12,7 +12,7 @@ use tokio::{
   sync::broadcast::error::RecvError,
   time::{sleep, timeout},
 };
-use tracing::debug;
+use tracing::{debug, info};
 
 use super::{Engine, pair_flow::Hello};
 use crate::{
@@ -379,7 +379,7 @@ impl Engine {
       let mut store = self.store.lock().unwrap();
       let _ = store.set_hints(&id, device.relay.clone(), vec![a]);
     }
-    (device.name, device.os) = (name, os);
+    (device.name, device.os) = (name.clone(), os);
     let status = DeviceStatus {
       device,
       connected: true,
@@ -417,6 +417,7 @@ impl Engine {
       }
     };
     if let Some(status) = kept {
+      info!("{name} connected via {}", via(&conn));
       self.emit(Event::DeviceConnected(status));
     }
 
@@ -471,7 +472,10 @@ impl Engine {
       }
     };
     match left {
-      Some(None) => self.emit(Event::DeviceDisconnected(id)),
+      Some(None) => {
+        info!("{name} disconnected");
+        self.emit(Event::DeviceDisconnected(id))
+      }
       Some(Some(status)) => self.emit(Event::DeviceConnected(status)),
       None => {}
     }

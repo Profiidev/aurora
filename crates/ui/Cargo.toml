@@ -20,9 +20,9 @@ qrcode.workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 cargo-packager-updater.workspace = true
 
-[dev-dependencies]
-gpui = { workspace = true, features = ["test-support"] }
-
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 base64.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

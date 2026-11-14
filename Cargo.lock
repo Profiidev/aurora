@@ -625,14 +625,14 @@ dependencies = [
 
 [[package]]
 name = "aurora"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "aurora_cli",
 ]
 
 [[package]]
 name = "aurora_cli"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "anyhow",
  "aurora_core",
@@ -644,7 +644,7 @@ dependencies = [
 
 [[package]]
 name = "aurora_core"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "anyhow",
  "aurora_proto",
@@ -667,7 +667,7 @@ dependencies = [
 
 [[package]]
 name = "aurora_daemon"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "anyhow",
  "aurora_core",
@@ -680,7 +680,7 @@ dependencies = [
 
 [[package]]
 name = "aurora_gui"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "aurora_core",
  "aurora_ui",
@@ -688,7 +688,7 @@ dependencies = [
 
 [[package]]
 name = "aurora_mobile"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "android-activity",
  "android_logger",
@@ -706,7 +706,7 @@ dependencies = [
 
 [[package]]
 name = "aurora_proto"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "anyhow",
  "postcard",
@@ -716,7 +716,7 @@ dependencies = [
 
 [[package]]
 name = "aurora_transport"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "anyhow",
  "aurora_proto",
@@ -736,7 +736,7 @@ dependencies = [
 
 [[package]]
 name = "aurora_ui"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "anyhow",
  "aurora_core",
@@ -751,7 +751,7 @@ dependencies = [
 
 [[package]]
 name = "aurora_viewer"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "aurora_ui",
 ]
