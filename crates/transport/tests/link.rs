@@ -17,15 +17,17 @@ async fn node() -> Node {
 
 /// Plugs a cable between `a` and `b`; abort the handle to unplug it
 fn cable(a: &Node, b: &Node) -> JoinHandle<()> {
+  link_of(LinkKind::Usb, a, b)
+}
+
+/// A link of `kind` between `a` and `b`
+fn link_of(kind: LinkKind, a: &Node, b: &Node) -> JoinHandle<()> {
   let (x, y) = tokio::io::duplex(1 << 16);
   let (xr, xw) = tokio::io::split(x);
   let (yr, yw) = tokio::io::split(y);
   let (la, lb) = (a.links().clone(), b.links().clone());
   tokio::spawn(async move {
-    let _ = tokio::join!(
-      la.attach(LinkKind::Usb, xr, xw),
-      lb.attach(LinkKind::Usb, yr, yw)
-    );
+    let _ = tokio::join!(la.attach(kind, xr, xw), lb.attach(kind, yr, yw));
   })
 }
 
@@ -276,4 +278,35 @@ async fn dropping_the_accessory_link_frees_a_blocked_fd() {
     .unwrap();
   let hello = res.expect("fd closed, not timed out");
   assert!(hello.starts_with(b"AU"), "only the phone's hello was sent");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn disconnect_ends_only_that_link() {
+  let (a, b) = (node().await, node().await);
+  let _usb = cable(&a, &b);
+  let bt = link_of(LinkKind::Bluetooth, &a, &b);
+  wait_for("both links", || {
+    a.links().is_linked_by(LinkKind::Usb, &b.id())
+      && a.links().is_linked_by(LinkKind::Bluetooth, &b.id())
+  })
+  .await;
+  let mut events = a.links().events();
+  a.links().disconnect(LinkKind::Bluetooth, &b.id());
+  assert_eq!(
+    tokio::time::timeout(Duration::from_secs(5), events.recv())
+      .await
+      .unwrap()
+      .unwrap(),
+    aurora_transport::LinkEvent::Down {
+      kind: LinkKind::Bluetooth,
+      peer: b.id()
+    }
+  );
+  // both ends of the in-memory pipe returned
+  tokio::time::timeout(Duration::from_secs(5), bt)
+    .await
+    .unwrap()
+    .unwrap();
+  assert!(a.links().is_linked_by(LinkKind::Usb, &b.id()));
+  assert!(!a.links().is_linked_by(LinkKind::Bluetooth, &b.id()));
 }

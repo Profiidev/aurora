@@ -2,6 +2,7 @@
 //! (direct, mDNS, relays) and over point-to-point [`link`]s such as USB. A
 //! connection moves between them without the caller noticing.
 
+pub mod bluetooth;
 #[cfg(feature = "iroh")]
 pub mod link;
 #[cfg(feature = "iroh")]

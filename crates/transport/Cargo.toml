@@ -21,6 +21,8 @@ iroh = [
 ]
 # USB host side (desktop): switches phones into Android Open Accessory mode
 nusb = ["iroh", "dep:nusb"]
+# Bluetooth LE host side (desktop, Linux): advertises and accepts L2CAP
+bluer = ["iroh", "dep:bluer"]
 
 [dependencies]
 tracing.workspace = true
@@ -38,6 +40,7 @@ n0-watcher = { workspace = true, optional = true }
 noq-udp = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
 nusb = { workspace = true, optional = true }
+bluer = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
 # interrupts the accessory read thread, see usb/accessory.rs

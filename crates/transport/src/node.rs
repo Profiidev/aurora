@@ -114,6 +114,8 @@ pub struct Node {
   seen: broadcast::Sender<Seen>,
   #[cfg(feature = "nusb")]
   usb: crate::usb::UsbHost,
+  #[cfg(feature = "bluer")]
+  bluetooth: crate::bluetooth::BtHost,
 }
 
 impl Node {
@@ -146,6 +148,8 @@ impl Node {
     Ok(Self {
       #[cfg(feature = "nusb")]
       usb: crate::usb::UsbHost::new(links.clone()),
+      #[cfg(feature = "bluer")]
+      bluetooth: crate::bluetooth::BtHost::new(links.clone()),
       ep,
       link_ep,
       mdns,
@@ -192,6 +196,15 @@ impl Node {
     #[cfg(feature = "nusb")]
     self.usb.set_enabled(on);
     #[cfg(not(feature = "nusb"))]
+    let _ = on;
+  }
+
+  /// Advertise and accept Bluetooth channels (desktop); without the `bluer`
+  /// feature a no-op, phones dial and attach through [`Node::links`]
+  pub fn set_bluetooth(&self, on: bool) {
+    #[cfg(feature = "bluer")]
+    self.bluetooth.set_active(on);
+    #[cfg(not(feature = "bluer"))]
     let _ = on;
   }
 
@@ -246,6 +259,7 @@ impl Node {
   pub async fn close(&self) {
     self.mdns.set_enabled(false).ok();
     self.set_usb(false);
+    self.set_bluetooth(false);
     tokio::join!(self.ep.close(), self.link_ep.close());
   }
 }

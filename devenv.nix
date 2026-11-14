@@ -13,6 +13,8 @@ let
     freetype
     libxkbcommon
     libxcb
+    # bluer talks to BlueZ over D-Bus
+    dbus
   ];
 
   # gpui dlopens these

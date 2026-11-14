@@ -54,6 +54,7 @@ n0-future = "0.3.2"
 n0-watcher = "1.0.1"
 noq-udp = { version = "1.4.0", default-features = false }
 nusb = { version = "0.2.9", features = ["tokio"] }
+bluer = { version = "0.17.4", features = ["bluetoothd", "l2cap"] }
 bytes = "1.11"
 
 # Async and IPC
