@@ -257,28 +257,39 @@ async fn switch_to_accessory(info: &DeviceInfo) -> Result<()> {
 /// open fails)
 async fn run_accessory(links: &Links, info: &DeviceInfo) -> Result<()> {
   loop {
-    let dev = info.open().await?;
-    let intf = dev.detach_and_claim_interface(0).await?;
-    let (mut ep_in, mut ep_out) = (None, None);
-    for ep in intf.descriptor().iter().flat_map(|d| d.endpoints()) {
-      if ep.transfer_type() != TransferType::Bulk {
-        continue;
+    if let Err(e) = link_once(links, info).await {
+      // the accessory stays until unplugged; it may just be busy (another
+      // program holds it, the phone app is not open yet)
+      if !present(info.id()).await {
+        return Ok(());
       }
-      match ep.direction() {
-        Direction::In => ep_in = ep_in.or(Some(ep.address())),
-        Direction::Out => ep_out = ep_out.or(Some(ep.address())),
-      }
-    }
-    let (Some(ep_in), Some(ep_out)) = (ep_in, ep_out) else {
-      bail!("accessory has no bulk endpoints");
-    };
-    let reader = intf.endpoint::<Bulk, In>(ep_in)?.reader(IO_BUF);
-    let writer = DelimitedWrite::new(intf.endpoint::<Bulk, Out>(ep_out)?.writer(IO_BUF));
-    if let Err(e) = links.attach(LinkKind::Usb, reader, writer).await {
-      debug!("USB link: {e}");
+      debug!("USB link: {e:#}");
     }
     sleep(RETRY).await;
   }
+}
+
+/// One link over the accessory's bulk endpoints, until it ends
+async fn link_once(links: &Links, info: &DeviceInfo) -> Result<()> {
+  let dev = info.open().await?;
+  let intf = dev.detach_and_claim_interface(0).await?;
+  let (mut ep_in, mut ep_out) = (None, None);
+  for ep in intf.descriptor().iter().flat_map(|d| d.endpoints()) {
+    if ep.transfer_type() != TransferType::Bulk {
+      continue;
+    }
+    match ep.direction() {
+      Direction::In => ep_in = ep_in.or(Some(ep.address())),
+      Direction::Out => ep_out = ep_out.or(Some(ep.address())),
+    }
+  }
+  let (Some(ep_in), Some(ep_out)) = (ep_in, ep_out) else {
+    bail!("accessory has no bulk endpoints");
+  };
+  let reader = intf.endpoint::<Bulk, In>(ep_in)?.reader(IO_BUF);
+  let writer = DelimitedWrite::new(intf.endpoint::<Bulk, Out>(ep_out)?.writer(IO_BUF));
+  links.attach(LinkKind::Usb, reader, writer).await?;
+  Ok(())
 }
 
 /// Ends each flush with a short or zero-length packet, so the phone's read
