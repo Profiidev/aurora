@@ -48,6 +48,7 @@ command!(SettingsGet, "settings:get", () => AppSettings, |_p, e| {
     discovery: s.discovery,
     usb: Some(s.usb),
     bluetooth: Some(s.bluetooth),
+    background: s.background,
   })
 });
 command!(SettingsSetDiscovery, "settings:set_discovery", bool => (), |p, e| {
@@ -70,6 +71,15 @@ command!(SettingsSetBluetooth, "settings:set_bluetooth", bool => (), |p, e| {
   crate::config::set_bluetooth(&crate::config::state_dir(), p)?;
   let mut s = e.settings();
   s.bluetooth = p;
+  e.set_settings(s);
+  Ok(())
+});
+
+command!(SettingsSetBackground, "settings:set_background", bool => (), |p, e| {
+  anyhow::ensure!(e.settings().background.is_some(), "only the phone runs in the background");
+  crate::config::set_background(&crate::config::state_dir(), p)?;
+  let mut s = e.settings();
+  s.background = Some(p);
   e.set_settings(s);
   Ok(())
 });
@@ -138,6 +148,7 @@ pub fn register_all(registry: &mut IpcRegistry) {
     .register::<SettingsSetDiscovery>()
     .register::<SettingsSetUsb>()
     .register::<SettingsSetBluetooth>()
+    .register::<SettingsSetBackground>()
     .register_stream::<UiPresent>()
     .register_stream::<Events>();
 }

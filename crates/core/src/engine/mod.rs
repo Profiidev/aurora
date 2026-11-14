@@ -53,6 +53,9 @@ pub struct Settings {
   pub usb: bool,
   /// Bluetooth LE fallback (desktop: advertise; phone: scan and dial)
   pub bluetooth: bool,
+  /// Phone only: the engine runs in the background (Android service);
+  /// `None` where that does not apply
+  pub background: Option<bool>,
 }
 
 pub struct Engine {
@@ -227,6 +230,7 @@ pub(crate) mod tests {
       relay: false,
       usb: false,
       bluetooth: false,
+      background: None,
     }
   }
 

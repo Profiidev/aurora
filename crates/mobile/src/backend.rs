@@ -42,6 +42,7 @@ impl EngineBackend {
       relay: true,
       usb: USB && loaded.config.transport.usb,
       bluetooth: loaded.config.transport.bluetooth,
+      background: BACKGROUND.then_some(loaded.config.mobile.background),
     };
     multicast(settings.discovery);
     let engine = rt.block_on(Engine::start(settings, dir))?;
@@ -103,7 +104,17 @@ impl Backend for EngineBackend {
       discovery: s.discovery,
       usb: USB.then_some(s.usb),
       bluetooth: Some(s.bluetooth),
+      background: s.background,
     })
+  }
+  fn set_background(&self, on: bool) -> Result<()> {
+    anyhow::ensure!(BACKGROUND, "only Android runs in the background");
+    config::set_background(&self.dir, on)?;
+    let _guard = self.rt.enter();
+    let mut s = self.engine.settings();
+    s.background = Some(on);
+    self.engine.set_settings(s);
+    Ok(())
   }
   fn set_bluetooth(&self, on: bool) -> Result<()> {
     config::set_bluetooth(&self.dir, on)?;
@@ -148,6 +159,9 @@ impl Backend for EngineBackend {
     }))
   }
 }
+
+/// Only Android keeps the engine running when the app is closed
+const BACKGROUND: bool = cfg!(target_os = "android");
 
 /// iOS has no USB accessory mode without Apple's MFi program
 const USB: bool = cfg!(not(target_os = "ios"));

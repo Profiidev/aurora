@@ -17,6 +17,8 @@ pub trait Backend: Send + Sync + 'static {
   fn set_discovery(&self, on: bool) -> Result<()>;
   fn set_usb(&self, on: bool) -> Result<()>;
   fn set_bluetooth(&self, on: bool) -> Result<()>;
+  /// Phone only: keep the engine running when the app is closed
+  fn set_background(&self, on: bool) -> Result<()>;
   /// Tells the engine a window is open, for as long as the process lives;
   /// Bluetooth only runs while someone looks
   fn hold_presence(&self) {}
@@ -82,6 +84,9 @@ mod daemon {
     }
     fn set_bluetooth(&self, on: bool) -> Result<()> {
       ipc::send::<cmd::SettingsSetBluetooth>(on)
+    }
+    fn set_background(&self, on: bool) -> Result<()> {
+      ipc::send::<cmd::SettingsSetBackground>(on)
     }
     fn hold_presence(&self) {
       std::thread::spawn(|| {

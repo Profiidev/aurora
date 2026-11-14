@@ -556,6 +556,22 @@ impl AppView {
         .into_any_element(),
       );
     }
+    if let Some(background) = self.background() {
+      rows.push(
+        field_row(
+          cx,
+          "Run in background",
+          "Stay connected when the app is closed, and start with the phone.",
+          div().debug_selector(|| "background-settings".into()).child(
+            Switch::new("background-settings")
+              .cursor_pointer()
+              .checked(background)
+              .on_click(cx.listener(|this, on: &bool, _, cx| this.set_background(*on, cx))),
+          ),
+        )
+        .into_any_element(),
+      );
+    }
     if let Some(bluetooth) = self.bluetooth() {
       rows.push(
         field_row(
@@ -698,8 +714,11 @@ mod tests {
     click(vcx, "usb-settings");
     assert!(fake.calls().contains(&"set_usb false".to_string()));
 
-    assert!(shown(vcx, "bluetooth-settings"));
-    fake.set(|s| (s.settings.usb, s.settings.bluetooth) = (None, None));
+    assert!(shown(vcx, "bluetooth-settings") && shown(vcx, "background-settings"));
+    click(vcx, "background-settings");
+    assert!(fake.calls().contains(&"set_background false".to_string()));
+    fake
+      .set(|s| (s.settings.usb, s.settings.bluetooth, s.settings.background) = (None, None, None));
     vcx.update_entity(&app, |a, cx| a.refresh(cx));
     draw(vcx);
     assert!(!shown(vcx, "usb-settings"), "hidden on iOS");
@@ -707,6 +726,7 @@ mod tests {
       !shown(vcx, "bluetooth-settings"),
       "hidden without Bluetooth"
     );
+    assert!(!shown(vcx, "background-settings"), "hidden off Android");
   }
 
   #[gpui::test]

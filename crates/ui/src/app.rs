@@ -397,6 +397,23 @@ impl AppView {
     self.settings.as_ref().and_then(|s| s.bluetooth)
   }
 
+  /// Phone only: whether the engine keeps running when the app is closed
+  pub(crate) fn background(&self) -> Option<bool> {
+    self.settings.as_ref().and_then(|s| s.background)
+  }
+
+  pub(crate) fn set_background(&mut self, on: bool, cx: &mut Context<Self>) {
+    if let Some(s) = &mut self.settings {
+      s.background = Some(on);
+    }
+    self.bg(
+      cx,
+      move |b| b.set_background(on),
+      |this, _, cx| this.refresh(cx),
+    );
+    cx.notify();
+  }
+
   pub(crate) fn set_bluetooth(&mut self, on: bool, cx: &mut Context<Self>) {
     if let Some(s) = &mut self.settings {
       s.bluetooth = Some(on);

@@ -96,4 +96,7 @@ pub struct AppSettings {
   /// Bluetooth fallback; `None` where the platform has none
   #[serde(default)]
   pub bluetooth: Option<bool>,
+  /// Phone only: keep running when the app is closed
+  #[serde(default)]
+  pub background: Option<bool>,
 }
