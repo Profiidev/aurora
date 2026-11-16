@@ -34,6 +34,8 @@ gpui-mobile = { workspace = true, features = [
   "clipboard"
 ] }
 jni = "0.22"
+# the engine service process sets the JNI context iroh reads; see jvm.rs
+iroh.workspace = true
 android_logger.workspace = true
 android-activity.workspace = true
 
