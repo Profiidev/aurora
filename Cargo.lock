@@ -698,6 +698,7 @@ dependencies = [
  "aurora_ui",
  "gpui-pre",
  "gpui-pre-mobile",
+ "iroh",
  "jni 0.22.4",
  "log",
  "tempfile",

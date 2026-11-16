@@ -18,8 +18,12 @@ pub fn call_err(env: &mut Env, e: jni::errors::Error) -> String {
   e.to_string()
 }
 
-/// Keeps the VM and `context.getApplicationContext()`; later calls are no-ops
-fn store(env: &mut Env, context: &JObject) -> Result<(), String> {
+/// Keeps the VM and `context.getApplicationContext()`; later calls are no-ops.
+/// `ndk`: also hand both to iroh, whose DNS and network lookups read them
+/// through `ndk-context`; android-activity does that in the UI process,
+/// nothing does in the service process. Without it the engine aborts at start
+/// in release builds (`panic = "abort"`)
+fn store(env: &mut Env, context: &JObject, ndk: bool) -> Result<(), String> {
   if CONTEXT.get().is_some() {
     return Ok(());
   }
@@ -34,6 +38,10 @@ fn store(env: &mut Env, context: &JObject) -> Result<(), String> {
     .map_err(|e| call_err(env, e))?;
   let global = env.new_global_ref(app).map_err(|e| call_err(env, e))?;
   let vm = env.get_java_vm().map_err(|e| call_err(env, e))?;
+  if ndk {
+    // SAFETY: both stay alive in the statics below for the process' lifetime
+    unsafe { iroh::dns::install_android_jni_context(vm.get_raw().cast(), global.as_raw().cast()) };
+  }
   let _ = VM.set(vm);
   let _ = CONTEXT.set(global);
   Ok(())
@@ -50,7 +58,7 @@ pub unsafe fn init_raw(env: *mut c_void, context: *mut c_void) -> Result<(), Str
     .with_env(|env| -> Result<Result<(), String>, jni::errors::Error> {
       // SAFETY: the caller's contract
       let context = unsafe { JObject::from_raw(env, context.cast()) };
-      Ok(store(env, &context))
+      Ok(store(env, &context, true))
     })
     .into_outcome();
   match outcome {
@@ -65,7 +73,7 @@ pub fn init_from_activity() -> Result<(), String> {
   use gpui_mobile::android::jni as h;
   h::with_env(|env| {
     let activity = h::activity(env)?;
-    store(env, &activity)
+    store(env, &activity, false)
   })
 }
 
