@@ -1,6 +1,6 @@
 //! Desktop self update via cargo-packager-updater, ported from proton:
 //! `latest.json` on the GitHub release (written by
-//! `.github/workflows/desktop-release.yml`), bundles signed with proton's key.
+//! `.github/workflows/desktop-release.yml`), bundles signed with aurora's own key.
 //! Also starts `aurorad` when nothing runs it yet: deb installs through the
 //! systemd user unit the package ships, AppImages as a child of the GUI.
 
@@ -21,8 +21,8 @@ use gpui_kit::component::{WindowExt, notification::Notification};
 
 pub const ENDPOINT: &str =
   "https://github.com/Profiidev/aurora/releases/latest/download/latest.json";
-/// Proton's minisign key: both apps' releases are signed with the same private key
-pub const PUBKEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ2QzRBNzRCNkZEMEQ5MzEKUldReDJkQnZTNmZFUmd0STI1dnRzYld4ekZsUCtQY3ZKV2dMV3ZsMmNnUTNUTHZJTWdDZm5ZekYK";
+/// Aurora's own minisign updater key
+pub const PUBKEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU3MDNEMjJBQTI0MUU4NUQKUldSZDZFR2lLdElEVjdwd3pVdVBTcE83REIrN3FJb1hPdSswRURJdWpNZ2xzMkNYUEF1WitZMFEK";
 
 /// Binaries and dpkg file list of the `aurora` deb
 const DEB_GUI: &str = "/usr/bin/aurora-gui";
