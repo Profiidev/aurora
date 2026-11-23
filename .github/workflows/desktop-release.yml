@@ -53,7 +53,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: cargo packager --release -f deb,appimage
 
-      # signed with proton's updater key, crates/ui/src/updater.rs holds the public half
+      # signed with aurora's updater key, crates/ui/src/updater.rs holds the public half
       - name: Build and sign app
         if: github.event_name != 'pull_request'
         env:
