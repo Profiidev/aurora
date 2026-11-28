@@ -26,9 +26,7 @@
     (flake-utils.lib.eachDefaultSystem (
       system:
       let
-        pkgs = import nixpkgs {
-          inherit system;
-        };
+        pkgs = nixpkgs.legacyPackages.${system};
 
         pkg = pkgs.callPackage ./nix/package.nix { };
       in
@@ -48,6 +46,10 @@
       }
     ))
     // {
+      overlays.default = final: _: {
+        aurora = final.callPackage ./nix/package.nix { };
+      };
+
       nixosModules.default = import ./nix/nixos-module.nix self;
       homeModules.default = import ./nix/home-module.nix self;
     };
